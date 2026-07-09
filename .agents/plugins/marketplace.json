@@ -1,0 +1,20 @@
+{
+  "name": "execute-task",
+  "interface": {
+    "displayName": "Execute Task"
+  },
+  "plugins": [
+    {
+      "name": "execute-task",
+      "source": {
+        "source": "local",
+        "path": "./plugins/execute-task"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

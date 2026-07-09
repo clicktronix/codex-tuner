@@ -1,0 +1,7 @@
+interface:
+  display_name: "Execute Task"
+  short_description: "Run coding tasks safely from intake to delivery"
+  default_prompt: "Use $execute-task to complete this coding task end to end."
+
+policy:
+  allow_implicit_invocation: false
