@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-SCRIPTS="$(cd "$(dirname "$0")/../plugins/execute-task/skills/execute-task/scripts" && pwd)"
+SCRIPTS="$(cd "$(dirname "$0")/../plugins/codex-tuner/skills/execute-task/scripts" && pwd)"
 failures=0
 REPO="$(mktemp -d)" || exit 1
 (

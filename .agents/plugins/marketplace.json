@@ -1,14 +1,14 @@
 {
-  "name": "execute-task",
+  "name": "codex-tuner",
   "interface": {
-    "displayName": "Execute Task"
+    "displayName": "Codex Tuner"
   },
   "plugins": [
     {
-      "name": "execute-task",
+      "name": "codex-tuner",
       "source": {
         "source": "local",
-        "path": "./plugins/execute-task"
+        "path": "./plugins/codex-tuner"
       },
       "policy": {
         "installation": "AVAILABLE",

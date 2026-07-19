@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-SCRIPT="$(cd "$(dirname "$0")/../plugins/execute-task/skills/execute-task/scripts" && pwd)/guard-artifacts.sh"
+SCRIPT="$(cd "$(dirname "$0")/../plugins/codex-tuner/skills/execute-task/scripts" && pwd)/guard-artifacts.sh"
 failures=0
 
 make_repo() {

@@ -1,16 +1,17 @@
-# execute-task
+# codex-tuner
 
-A Codex skill for running repository coding tasks from intake through verified delivery.
+A Codex-native collection of reusable engineering workflow skills.
 
-`$execute-task` provides acceptance criteria, risk-scaled review, hard verification gates,
-resumable local journals, and explicit authority checks before outward-facing actions. It has no
+The first packaged skill is `$execute-task`. It runs repository coding tasks from intake through
+verified delivery with acceptance criteria, risk-scaled review, hard verification gates, resumable
+local journals, and explicit authority checks before outward-facing actions. The collection has no
 dependency on another agent plugin.
 
 ## Install
 
 ```bash
-codex plugin marketplace add clicktronix/execute-task --ref main
-codex plugin add execute-task@execute-task
+codex plugin marketplace add clicktronix/codex-tuner --ref main
+codex plugin add codex-tuner@codex-tuner
 ```
 
 Invoke explicitly:
@@ -27,8 +28,8 @@ The skill is explicit-only and will not take over ordinary coding requests autom
 bash tests/run.sh
 ```
 
-The plugin marketplace lives at `.agents/plugins/marketplace.json`; the plugin is under
-`plugins/execute-task/`.
+The plugin marketplace lives at `.agents/plugins/marketplace.json`; Codex skills are packaged under
+`plugins/codex-tuner/skills/`.
 
 ## License
 

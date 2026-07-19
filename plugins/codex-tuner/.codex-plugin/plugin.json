@@ -1,0 +1,36 @@
+{
+  "name": "codex-tuner",
+  "version": "0.1.0",
+  "description": "Codex-native engineering workflow skills for planning, execution, review, and verified delivery.",
+  "author": {
+    "name": "Clicktronix",
+    "url": "https://github.com/clicktronix"
+  },
+  "homepage": "https://github.com/clicktronix/codex-tuner",
+  "repository": "https://github.com/clicktronix/codex-tuner",
+  "license": "MIT",
+  "keywords": [
+    "coding-workflow",
+    "task-execution",
+    "codex",
+    "verification",
+    "code-review",
+    "agent-skills"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex Tuner",
+    "shortDescription": "Engineering workflows for reliable Codex delivery.",
+    "longDescription": "Reusable Codex skills for engineering work. Start with execute-task: a repository workflow with acceptance criteria, risk-scaled review, verification gates, resumable journals, and explicit delivery authority.",
+    "developerName": "Clicktronix",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/clicktronix/codex-tuner",
+    "defaultPrompt": [
+      "Execute this coding task end to end and stop only at real hard gates."
+    ]
+  }
+}
