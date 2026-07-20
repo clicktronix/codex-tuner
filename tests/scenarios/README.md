@@ -5,7 +5,8 @@ a hard stop, task-introduced cheap-gate failures are fixed before review, and sm
 still receive deep review.
 
 `baseline_observed` and `green_check` preserve the original Claude/Haiku evidence from the source
-workflow. `codex_green_check` records a fresh run through the packaged `$execute-task` Codex skill.
+workflow. `codex_green_check` records a fresh run through the packaged
+`$codex-tuner:execute-task` Codex skill.
 The structural validator checks every scenario and its `tests_reference` anchor:
 
 ```bash

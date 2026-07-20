@@ -1,67 +1,88 @@
 #!/usr/bin/env bash
 # Prepare a resumable execute-task journal without requiring a pristine worktree.
-# Usage: preflight.sh <run-id> [target-branch] [--require-clean]
+# Usage: preflight.sh <run-id> [target-ref] [--require-clean]
 set -u
+umask 077
 
-ROOT="${EXECUTE_TASK_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-cd "$ROOT" 2>/dev/null || { echo "execute-task: cannot enter repo root '$ROOT'" >&2; exit 1; }
-git rev-parse --show-toplevel >/dev/null 2>&1 \
-  || { echo "execute-task: not a git repo at '$ROOT'" >&2; exit 1; }
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+# shellcheck source=lib.sh
+. "$SCRIPT_DIR/lib.sh"
+execute_task_init_root
 
-RAW="${1:?usage: preflight.sh <run-id> [target-branch] [--require-clean]}"
-RUN_ID="$(printf '%s' "$RAW" | tr -c 'A-Za-z0-9_.-' '-')"
-case "$RUN_ID" in
-  ''|.|..) echo "execute-task: invalid run-id '$RAW'" >&2; exit 1 ;;
-esac
-TARGET="${2:-}"
-REQUIRE_CLEAN="${3:-}"
-RUNS_DIR=".codex/execute-task-runs"
+RAW="${1:-}"
+execute_task_validate_run_id "$RAW"
+shift
+TARGET=""
+REQUIRE_CLEAN=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --require-clean) REQUIRE_CLEAN=1 ;;
+    --*) execute_task_die "unknown option '$1'" ;;
+    *)
+      [ -z "$TARGET" ] || execute_task_die "multiple target refs provided"
+      TARGET="$1"
+      ;;
+  esac
+  shift
+done
+execute_task_prepare_state
+JOURNAL="$EXECUTE_TASK_RUNS_DIR/$EXECUTE_TASK_RUN_ID.md"
+META="$EXECUTE_TASK_RUNS_DIR/$EXECUTE_TASK_RUN_ID.meta"
+execute_task_assert_regular_or_missing "$JOURNAL"
+execute_task_assert_regular_or_missing "$META"
 
-# Keep operational state local, including in linked worktrees and monorepo subdirectories.
-if ! git check-ignore -q "$RUNS_DIR/probe" 2>/dev/null; then
-  EXCLUDE_FILE="$(git rev-parse --git-path info/exclude 2>/dev/null)"
-  PREFIX="$(git rev-parse --show-prefix 2>/dev/null)"
-  PATTERN="/$PREFIX$RUNS_DIR/"
-  [ -n "$EXCLUDE_FILE" ] \
-    || { echo "execute-task: cannot resolve git exclude file" >&2; exit 1; }
-  mkdir -p "$(dirname "$EXCLUDE_FILE")" \
-    || { echo "execute-task: cannot create exclude directory" >&2; exit 1; }
-  if ! grep -qxF "$PATTERN" "$EXCLUDE_FILE" 2>/dev/null; then
-    if [ -s "$EXCLUDE_FILE" ] && [ -n "$(tail -c1 "$EXCLUDE_FILE" 2>/dev/null)" ]; then
-      printf '\n' >> "$EXCLUDE_FILE"
-    fi
-    printf '%s\n' "$PATTERN" >> "$EXCLUDE_FILE" \
-      || { echo "execute-task: cannot update $EXCLUDE_FILE" >&2; exit 1; }
-  fi
-fi
-
-if ! DIRTY="$(git status --porcelain -unormal -- . ":(exclude)$RUNS_DIR" 2>/dev/null)"; then
+if ! DIRTY="$(git status --porcelain -unormal -- . ":(exclude)$EXECUTE_TASK_STATE_REL" 2>/dev/null)"; then
   echo "execute-task: git status failed" >&2
   exit 1
 fi
-if [ "$REQUIRE_CLEAN" = "--require-clean" ] && [ -n "$DIRTY" ]; then
+if [ "$REQUIRE_CLEAN" -eq 1 ] && [ -n "$DIRTY" ]; then
   echo "execute-task: dirty worktree and --require-clean was requested:" >&2
   printf '%s\n' "$DIRTY" >&2
   exit 2
 fi
 
-mkdir -p "$RUNS_DIR" || { echo "execute-task: cannot create $RUNS_DIR" >&2; exit 1; }
-JOURNAL="$RUNS_DIR/$RUN_ID.md"
 BASE_SHA="$(git rev-parse --verify HEAD 2>/dev/null || echo '(unborn)')"
 BRANCH="$(git symbolic-ref --short HEAD 2>/dev/null || echo '(detached)')"
+TARGET_SHA="$BASE_SHA"
+if [ -n "$TARGET" ]; then
+  case "$TARGET" in
+    -*) execute_task_die "target ref must not start with '-'" ;;
+  esac
+  TARGET_SHA="$(git rev-parse --verify "$TARGET^{commit}" 2>/dev/null)" \
+    || execute_task_die "target '$TARGET' is not a valid commit"
+fi
 
 if [ -f "$JOURNAL" ]; then
+  [ -f "$META" ] || execute_task_die "metadata missing for existing run '$EXECUTE_TASK_RUN_ID'"
+  STORED_BRANCH="$(awk -F= '$1 == "branch" {print substr($0, index($0, "=") + 1); exit}' "$META")"
+  STORED_TARGET="$(awk -F= '$1 == "target_ref" {print substr($0, index($0, "=") + 1); exit}' "$META")"
+  [ "$STORED_BRANCH" = "$BRANCH" ] \
+    || execute_task_die "run '$EXECUTE_TASK_RUN_ID' belongs to branch '$STORED_BRANCH', not '$BRANCH'"
+  [ -z "$TARGET" ] || [ "$STORED_TARGET" = "$TARGET" ] \
+    || execute_task_die "run '$EXECUTE_TASK_RUN_ID' targets '$STORED_TARGET', not '$TARGET'"
   {
     echo
     echo "## restarted: $(date -u +%FT%TZ) (branch $BRANCH, base $BASE_SHA)"
   } >> "$JOURNAL" || { echo "execute-task: cannot append $JOURNAL" >&2; exit 1; }
 else
+  [ ! -e "$META" ] || execute_task_die "metadata exists without journal for '$EXECUTE_TASK_RUN_ID'"
+  META_TMP="$META.tmp.$$"
   {
-    echo "# execute-task run: $RUN_ID"
+    echo "version=1"
+    echo "run_id=$EXECUTE_TASK_RUN_ID"
+    echo "branch=$BRANCH"
+    echo "base_sha=$BASE_SHA"
+    echo "target_ref=$TARGET"
+    echo "target_sha=$TARGET_SHA"
+  } > "$META_TMP" || execute_task_die "cannot write run metadata"
+  mv "$META_TMP" "$META" || execute_task_die "cannot install run metadata"
+  {
+    echo "# execute-task run: $EXECUTE_TASK_RUN_ID"
     echo
     echo "- started: $(date -u +%FT%TZ)"
     echo "- branch: $BRANCH"
     echo "- target: ${TARGET:-?}"
+    echo "- target SHA: $TARGET_SHA"
     echo "- base SHA: $BASE_SHA"
     if [ -n "$DIRTY" ]; then
       echo "- baseline worktree: dirty (preserve unrelated changes)"
@@ -78,4 +99,4 @@ else
   } > "$JOURNAL" || { echo "execute-task: cannot write $JOURNAL" >&2; exit 1; }
 fi
 
-echo "$JOURNAL"
+echo "$EXECUTE_TASK_RUNS_REL/$EXECUTE_TASK_RUN_ID.md"

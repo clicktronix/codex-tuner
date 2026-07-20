@@ -1,26 +1,47 @@
 #!/usr/bin/env bash
 # Refuse outward-facing actions when local execute-task artifacts entered Git.
-# Usage: guard-artifacts.sh [target-ref]
+# Usage: guard-artifacts.sh <run-id>
 set -u
+umask 077
 
-ROOT="${EXECUTE_TASK_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-cd "$ROOT" 2>/dev/null || { echo "execute-task: cannot enter repo root '$ROOT'" >&2; exit 1; }
-git rev-parse --show-toplevel >/dev/null 2>&1 \
-  || { echo "execute-task: not a git repo at '$ROOT'" >&2; exit 1; }
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+# shellcheck source=lib.sh
+. "$SCRIPT_DIR/lib.sh"
+execute_task_init_root
 
-TARGET="${1:-}"
-RUNS_DIR=".codex/execute-task-runs"
+RAW="${1:-}"
+execute_task_validate_run_id "$RAW"
+execute_task_prepare_state allow-tracked
+META="$EXECUTE_TASK_RUNS_DIR/$EXECUTE_TASK_RUN_ID.meta"
+execute_task_assert_regular_or_missing "$META"
+[ -f "$META" ] || execute_task_die "metadata not found for run '$EXECUTE_TASK_RUN_ID'"
+ANCHOR="$(awk -F= '$1 == "target_sha" {print substr($0, index($0, "=") + 1); exit}' "$META")"
+[ -n "$ANCHOR" ] || execute_task_die "target SHA missing for run '$EXECUTE_TASK_RUN_ID'"
+if [ "$ANCHOR" != "(unborn)" ]; then
+  case "$ANCHOR" in
+    *[!0-9A-Fa-f]*) execute_task_die "invalid stored target SHA for run '$EXECUTE_TASK_RUN_ID'" ;;
+  esac
+  case "${#ANCHOR}" in
+    40|64) ;;
+    *) execute_task_die "invalid stored target SHA for run '$EXECUTE_TASK_RUN_ID'" ;;
+  esac
+fi
 
-STAGED="$(git diff --cached --name-only -- "$RUNS_DIR" 2>/dev/null)" \
+STAGED="$(git diff --cached --name-only -- "$EXECUTE_TASK_STATE_REL" "$EXECUTE_TASK_LEGACY_RUNS_REL" 2>/dev/null)" \
   || { echo "execute-task: staged diff query failed" >&2; exit 1; }
-TRACKED="$(git ls-files -- "$RUNS_DIR" 2>/dev/null)" \
+TRACKED="$(git ls-files -- "$EXECUTE_TASK_STATE_REL" "$EXECUTE_TASK_LEGACY_RUNS_REL" 2>/dev/null)" \
   || { echo "execute-task: tracked-files query failed" >&2; exit 1; }
 HISTORY=""
 
-if [ -n "$TARGET" ]; then
-  git rev-parse --verify -q "$TARGET^{commit}" >/dev/null 2>&1 \
-    || { echo "execute-task: target '$TARGET' is not a valid ref" >&2; exit 1; }
-  HISTORY="$(git log --format='%h %s' "$TARGET..HEAD" -- "$RUNS_DIR" 2>/dev/null)" \
+if [ "$ANCHOR" = "(unborn)" ]; then
+  if git rev-parse --verify -q 'HEAD^{commit}' >/dev/null 2>&1; then
+    HISTORY="$(git log --format='%h %s' HEAD -- "$EXECUTE_TASK_STATE_REL" "$EXECUTE_TASK_LEGACY_RUNS_REL" 2>/dev/null)" \
+      || { echo "execute-task: history query failed" >&2; exit 1; }
+  fi
+else
+  git rev-parse --verify -q "$ANCHOR^{commit}" >/dev/null 2>&1 \
+    || { echo "execute-task: stored target SHA '$ANCHOR' is unavailable" >&2; exit 1; }
+  HISTORY="$(git log --format='%h %s' "$ANCHOR..HEAD" -- "$EXECUTE_TASK_STATE_REL" "$EXECUTE_TASK_LEGACY_RUNS_REL" 2>/dev/null)" \
     || { echo "execute-task: history query failed" >&2; exit 1; }
 fi
 
