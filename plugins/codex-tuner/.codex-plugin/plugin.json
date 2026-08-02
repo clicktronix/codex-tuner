@@ -1,7 +1,7 @@
 {
   "name": "codex-tuner",
-  "version": "0.2.0",
-  "description": "Codex-native engineering workflow skills for planning, execution, review, and verified delivery.",
+  "version": "0.3.0",
+  "description": "Codex-native spec, run, and task-flow skills for machine-checkable planning and verified delivery through PR and merge.",
   "author": {
     "name": "Clicktronix",
     "url": "https://github.com/clicktronix"
@@ -21,7 +21,7 @@
   "interface": {
     "displayName": "Codex Tuner",
     "shortDescription": "Engineering workflows for reliable Codex delivery.",
-    "longDescription": "Reusable Codex skills for engineering work. Start with execute-task: a repository workflow with acceptance criteria, risk-scaled review, verification gates, resumable journals, and explicit delivery authority.",
+    "longDescription": "Use spec to commit machine-checkable task intent, run to execute it with resumable phases and current-SHA gates, and task-flow for branch, PR, board, plan, merge, and cleanup conventions.",
     "developerName": "Clicktronix",
     "category": "Productivity",
     "capabilities": [
@@ -30,7 +30,8 @@
     ],
     "websiteURL": "https://github.com/clicktronix/codex-tuner",
     "defaultPrompt": [
-      "Execute this coding task end to end and stop only at real hard gates."
+      "Turn this task into an executable specification.",
+      "Run this committed specification through verified delivery."
     ]
   }
 }

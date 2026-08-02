@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-SCRIPT="$(cd "$(dirname "$0")/../plugins/codex-tuner/skills/execute-task/scripts" && pwd)/preflight.sh"
+SCRIPT="$(cd "$(dirname "$0")/../plugins/codex-tuner/scripts/execute-task" && pwd)/preflight.sh"
 STATE_REL=".agent-state/codex-tuner"
 failures=0
 
@@ -80,6 +80,19 @@ if grep -qx "target_sha=$TARGET_SHA" "$REPO/$STATE_REL/execute-task-runs/pinned.
   echo "PASS target ref pinned to commit"
 else
   echo "FAIL target ref pinned to commit"
+  failures=1
+fi
+rm -rf "$REPO"
+
+make_repo
+EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" shared-run main >/dev/null
+(cd "$REPO" && git switch -qc feature)
+EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" shared-run main >/dev/null 2>&1
+rc=$?
+if [ "$rc" -eq 1 ]; then
+  echo "PASS cross-branch run reuse rejected"
+else
+  echo "FAIL cross-branch run reuse rejected (rc=$rc)"
   failures=1
 fi
 rm -rf "$REPO"

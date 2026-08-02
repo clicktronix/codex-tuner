@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-SCRIPTS="$(cd "$(dirname "$0")/../plugins/codex-tuner/skills/execute-task/scripts" && pwd)"
+SCRIPTS="$(cd "$(dirname "$0")/../plugins/codex-tuner/scripts/execute-task" && pwd)"
 SCRIPT="$SCRIPTS/guard-artifacts.sh"
 PREFLIGHT="$SCRIPTS/preflight.sh"
 STATE_REL=".agent-state/codex-tuner"

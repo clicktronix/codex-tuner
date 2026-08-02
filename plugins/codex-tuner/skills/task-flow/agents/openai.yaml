@@ -1,0 +1,6 @@
+interface:
+  display_name: "Task Flow"
+  short_description: "Apply branch, PR, board, and cleanup conventions"
+  default_prompt: "Use $codex-tuner:task-flow to apply the repository task lifecycle conventions."
+policy:
+  allow_implicit_invocation: true

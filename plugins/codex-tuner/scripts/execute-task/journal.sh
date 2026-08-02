@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Read or write a run journal.
+# Usage: journal.sh append|path|read|resume <run-id> [text|n]
+set -u
+umask 077
+
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+# shellcheck source=lib.sh
+. "$SCRIPT_DIR/lib.sh"
+execute_task_init_root
+
+SUBCOMMAND="${1:-}"
+execute_task_validate_run_id "${2:-}"
+execute_task_prepare_state
+JOURNAL="$EXECUTE_TASK_RUNS_DIR/$EXECUTE_TASK_RUN_ID.md"
+META="$EXECUTE_TASK_RUNS_DIR/$EXECUTE_TASK_RUN_ID.meta"
+execute_task_assert_regular_or_missing "$JOURNAL"
+execute_task_assert_regular_or_missing "$META"
+
+case "$SUBCOMMAND" in
+  path) echo "$EXECUTE_TASK_RUNS_REL/$EXECUTE_TASK_RUN_ID.md" ;;
+  append)
+    shift 2
+    MESSAGE="$*"
+    [ -n "$MESSAGE" ] || execute_task_die "journal message required"
+    [ -f "$JOURNAL" ] || execute_task_die "journal not found: $EXECUTE_TASK_RUNS_REL/$EXECUTE_TASK_RUN_ID.md"
+    [ -f "$META" ] || execute_task_die "metadata not found for run '$EXECUTE_TASK_RUN_ID'"
+    printf -- '- [%s] %s\n' "$(date -u +%FT%TZ)" "$MESSAGE" >> "$JOURNAL" \
+      || execute_task_die "cannot append journal"
+    ;;
+  read)
+    [ -f "$JOURNAL" ] || execute_task_die "journal not found: $EXECUTE_TASK_RUNS_REL/$EXECUTE_TASK_RUN_ID.md"
+    [ -f "$META" ] || execute_task_die "metadata not found for run '$EXECUTE_TASK_RUN_ID'"
+    cat "$JOURNAL"
+    ;;
+  resume)
+    [ -f "$JOURNAL" ] || execute_task_die "journal not found: $EXECUTE_TASK_RUNS_REL/$EXECUTE_TASK_RUN_ID.md"
+    [ -f "$META" ] || execute_task_die "metadata not found for run '$EXECUTE_TASK_RUN_ID'"
+    N="${3:-20}"
+    case "$N" in ''|*[!0-9]*) execute_task_die "resume line count must be a non-negative integer, got '$N'" ;; esac
+    [ "${#N}" -le 7 ] || N=9999999
+    if grep -q '^## log$' "$JOURNAL"; then
+      sed -n '1,/^## log$/p' "$JOURNAL"
+      LAST_RESTART="$(grep '^## restarted:' "$JOURNAL" | tail -1)"
+      [ -z "$LAST_RESTART" ] || printf '%s\n' "$LAST_RESTART  <- current base, supersedes the header above"
+      LOG="$(sed -n '/^## log$/,$p' "$JOURNAL" | sed '1d')"
+    else
+      LOG="$(cat "$JOURNAL")"
+    fi
+    TOTAL="$(printf '%s\n' "$LOG" | grep -c '')"
+    if [ "$N" -gt 0 ] && [ "$TOTAL" -gt "$N" ]; then
+      echo "...(earlier $((TOTAL - N)) lines omitted — 'journal.sh read' for the full record)"
+    fi
+    [ "$N" -gt 0 ] && printf '%s\n' "$LOG" | tail -n "$N"
+    exit 0
+    ;;
+  *) execute_task_die "unknown subcommand '$SUBCOMMAND' (use append|path|read|resume)" ;;
+esac

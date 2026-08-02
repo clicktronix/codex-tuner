@@ -1,0 +1,96 @@
+---
+name: spec
+description: Use when the user explicitly asks Codex to turn an issue, ticket, or rough coding task into a committed implementation specification before execution. Read the repository and current documentation, resolve product decisions interactively, create the task branch, and define machine-checkable acceptance criteria plus explicit auto-readiness for $codex-tuner:run.
+---
+
+# Specify Task
+
+Produce a committed spec that `$codex-tuner:run` can execute without re-opening product decisions.
+This skill owns questions; `run` owns delivery. Explicit invocation authorizes creating the task branch,
+committing the spec, and creating or updating its tracker issue, but not implementation or merge.
+
+## Read before asking
+
+Read, in order:
+
+1. The nearest `AGENTS.md` files and repository documentation.
+2. The referenced issue and repo-specific task-flow configuration.
+3. The code, tests, consumers, and architecture boundaries the task touches.
+4. Current primary documentation for versioned libraries, APIs, CLIs, and cloud services, using the
+   documentation mechanism required by the repository.
+
+Do not ask for information already available there. Ask one question at a time until answers stop
+changing the draft. A pending `TBD`, "as appropriate", or an unstated first failing test means the spec
+is not ready.
+
+## Define acceptance and scope
+
+Tag each criterion:
+
+- `[machine]`: an exact command or browser-driving step decides it.
+- `[eyes]`: human judgement cannot be reduced to an observable check.
+
+Every `[eyes]` item needs a machine replacement or a dated user waiver. A bare `[eyes]` criterion makes
+the spec not auto-ready. More than one PR, more than one repository, or independently reviewed phases
+require an epic with sub-issues and one spec per sub-issue.
+
+## Create the task branch
+
+Read `<plugin-root>/skills/task-flow/SKILL.md`, where `<plugin-root>` is two directories above this
+skill. Resolve the integration target from repository policy, falling back to the remote default branch,
+and fetch it. If currently on the target, create the task branch now. If already on a feature branch,
+confirm it belongs to this task and its PR is not merged. Never commit the spec directly to the target.
+
+The branch created here is the branch `run` continues. Do not create a second branch for the same spec.
+
+## Write and commit
+
+Write `<plans-root>/PLANS/YYYY-MM-DD-<slug>.md`, using `wiki/` when present and `docs/` otherwise:
+
+```markdown
+# <title>
+
+**Goal:** <what becomes true>
+**Issue:** #N | none
+**Architecture:** <approach and rejected alternatives>
+
+## Acceptance criteria
+- [ ] [machine] <criterion> — checked by: <exact command or tool step>
+- [ ] [eyes] <criterion> — machine replacement: <check> | WAIVED by <user> on <date>
+
+## Tasks
+1. <file path> — <change and reason>
+
+## Out of scope
+<explicit boundaries>
+
+## Run config
+branch: <current task branch>
+target: <integration branch>
+merge: squash|merge
+auto_ready: yes|no — <reason when no>
+ci: <exact command or check source>
+cheap_gate: <exact command>
+test: <exact command>
+tracker: gh|glab|none
+board: <project title + owner | none>
+```
+
+Set `auto_ready: yes` only for one PR with nonblank CI and no bare `[eyes]` item. This records
+capability; only invoking `$codex-tuner:run --auto <spec>` requests unattended execution.
+
+Inspect the diff, stage only the spec path, and commit it with a Conventional Commit. Create or update
+the issue so it and the spec link to each other.
+
+## Hand off
+
+Report the spec path, current branch, target, and one suitable command. Offer `--auto` only when
+`auto_ready: yes`:
+
+```text
+$codex-tuner:run docs/PLANS/2026-07-31-thing.md
+$codex-tuner:run --auto docs/PLANS/2026-07-31-thing.md
+```
+
+Verify that every criterion names its deciding check, no executor-owned product decision remains, the
+spec is committed on its task branch, and the issue links both ways.

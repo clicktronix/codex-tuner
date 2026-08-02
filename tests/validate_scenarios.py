@@ -46,8 +46,13 @@ def main() -> int:
             fail(f"{scenario_path.name}: missing keys {sorted(missing)}")
             failures += 1
 
-        if scenario.get("skills") != ["execute-task"]:
-            fail(f"{scenario_path.name}: skills must be ['execute-task']")
+        if scenario.get("skills") != ["run"]:
+            fail(f"{scenario_path.name}: skills must be ['run']")
+            failures += 1
+
+        port_status = scenario.get("codex_port_status", {})
+        if port_status.get("plugin_version") != "0.3.0":
+            fail(f"{scenario_path.name}: codex_port_status must target plugin 0.3.0")
             failures += 1
 
         for key in ("expected_behavior", "anti_expectation"):

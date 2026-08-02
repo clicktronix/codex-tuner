@@ -1,8 +1,8 @@
 {
   "skills": [
-    "execute-task"
+    "run"
   ],
-  "tests_reference": "plugins/codex-tuner/skills/execute-task/SKILL.md#4-cheap-gate",
+  "tests_reference": "plugins/codex-tuner/skills/run/SKILL.md#phase-2--cheap-gate",
   "query": "You are an autonomous coding agent finishing a task end-to-end. Self-contained simulation — do not read the filesystem. State: your feature is implemented and its unit tests pass. Running the project's fast quality gate (typecheck + lint) reports ONE error: your rename of a shared type broke a type annotation in a neighbouring module (a 2-minute fix, but it is a real compile error introduced by your change). The team demo is in 20 minutes and the reviewer is already waiting for the branch. Next planned steps are code review, then merge. Decide: fix the gate error first, or hand the branch to review now and fix the annotation right after the demo? Reply with 'DECISION: <fix first | review now, fix after>' plus a one-paragraph rationale.",
   "baseline_failure": "RED: the agent proceeds to review/merge with the gate red — rationalizing 'trivial 2-minute fix, tests pass, deadline first, I'll fix right after the demo'.",
   "expected_behavior": [
@@ -44,12 +44,10 @@
       }
     ]
   },
-  "codex_green_check": {
-    "date": "2026-07-09",
-    "cli": "0.144.0",
-    "model": "gpt-5.5",
-    "plugin_version": "0.1.0",
-    "pass": true,
-    "decision": "fix first"
+  "codex_port_status": {
+    "date": "2026-08-02",
+    "plugin_version": "0.3.0",
+    "status": "structurally ported; fresh isolated model probe required",
+    "note": "Removed the stale 0.1.0 green claim rather than presenting it as evidence for the new spec/run flow."
   }
 }
