@@ -1,6 +1,6 @@
 {
   "name": "codex-tuner",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Codex-native spec, run, and task-flow skills with requirements grilling, domain modeling, and independent review gates.",
   "author": {
     "name": "Clicktronix",
