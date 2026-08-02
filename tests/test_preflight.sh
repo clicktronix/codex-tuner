@@ -1,116 +1,132 @@
 #!/usr/bin/env bash
 set -u
 
-SCRIPT="$(cd "$(dirname "$0")/../plugins/codex-tuner/skills/execute-task/scripts" && pwd)/preflight.sh"
-STATE_REL=".agent-state/codex-tuner"
+SCRIPT="$(cd "$(dirname "$0")/../plugins/codex-tuner/scripts/execute-task" && pwd)/preflight.sh"
+RUNS_REL=".agent-state/codex-tuner/execute-task-runs"
 failures=0
 
 make_repo() {
   REPO="$(mktemp -d)" || exit 1
   (
-    cd "$REPO" && git init -q && git checkout -qb main && git config user.email test@example.com \
-      && git config user.name test && echo base > file.txt && git add file.txt \
-      && git commit -qm init
+    cd "$REPO" && git init -q -b main && git config user.email test@example.com \
+      && git config user.name test && printf 'base\n' > file.txt && git add file.txt \
+      && git commit -qm init && git switch -qc task
   ) || exit 1
+}
+
+run_preflight() {
+  EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" "$@"
 }
 
 make_repo
 EXCLUDE_BEFORE="$(cat "$REPO/.git/info/exclude" 2>/dev/null || true)"
-JOURNAL="$(EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" run-1 main)"
+JOURNAL="$(run_preflight run-1 main --expected-branch task)"
+SHA="$(git -C "$REPO" rev-parse main)"
 if [ -f "$REPO/$JOURNAL" ] \
-  && [ -f "$REPO/$STATE_REL/execute-task-runs/run-1.meta" ] \
+  && grep -qxF 'run_id=run-1' "$REPO/$RUNS_REL/run-1.meta" \
+  && grep -qxF 'branch=task' "$REPO/$RUNS_REL/run-1.meta" \
+  && grep -qxF "target_sha=$SHA" "$REPO/$RUNS_REL/run-1.meta" \
   && (cd "$REPO" && git check-ignore -q "$JOURNAL") \
   && [ "$(cat "$REPO/.git/info/exclude" 2>/dev/null || true)" = "$EXCLUDE_BEFORE" ]; then
-  echo "PASS clean preflight"
+  echo "PASS clean-preflight-owned"
 else
-  echo "FAIL clean preflight"
+  echo "FAIL clean-preflight-owned"
   failures=1
 fi
 rm -rf "$REPO"
 
 make_repo
-echo user-change >> "$REPO/file.txt"
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" run-dirty main >/dev/null 2>&1
+printf 'change\n' >> "$REPO/file.txt"
+run_preflight dirty main --expected-branch task >/dev/null 2>&1
 rc=$?
-if [ "$rc" -eq 0 ] && grep -q "baseline worktree: dirty" "$REPO/$STATE_REL/execute-task-runs/run-dirty.md"; then
-  echo "PASS dirty baseline preserved"
+if [ "$rc" -eq 2 ] && [ ! -e "$REPO/$RUNS_REL/dirty.md" ]; then
+  echo "PASS dirty-blocks"
 else
-  echo "FAIL dirty baseline preserved (rc=$rc)"
+  echo "FAIL dirty-blocks (rc=$rc)"
   failures=1
 fi
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" run-strict --require-clean >/dev/null 2>&1
+rm -rf "$REPO"
+
+make_repo
+mkdir -p "$REPO/packages/app"
+printf 'nested\n' > "$REPO/packages/app/app.txt"
+(cd "$REPO" && git add packages/app/app.txt && git commit -qm "add nested project")
+printf 'dirty outside project\n' >> "$REPO/file.txt"
+EXECUTE_TASK_PROJECT_DIR="$REPO/packages/app" bash "$SCRIPT" nested-dirty main --expected-branch task >/dev/null 2>&1
 rc=$?
-if [ "$rc" -eq 2 ]; then
-  echo "PASS require-clean blocks"
+if [ "$rc" -eq 2 ] && [ ! -e "$REPO/$RUNS_REL/nested-dirty.md" ]; then
+  echo "PASS repo-wide-dirty-blocks-from-subdirectory"
 else
-  echo "FAIL require-clean blocks (rc=$rc)"
+  echo "FAIL repo-wide-dirty-blocks-from-subdirectory (rc=$rc)"
   failures=1
 fi
 rm -rf "$REPO"
 
 make_repo
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" '..' main >/dev/null 2>&1
+run_preflight 'same/id' main --expected-branch task >/dev/null 2>&1; slash_rc=$?
+run_preflight 'Run' main --expected-branch task >/dev/null 2>&1; upper_rc=$?
+run_preflight run main --expected-branch task >/dev/null 2>&1; lower_rc=$?
+if [ "$slash_rc" -eq 1 ] && [ "$upper_rc" -eq 1 ] && [ "$lower_rc" -eq 0 ]; then
+  echo "PASS filesystem-colliding-run-ids-rejected"
+else
+  echo "FAIL filesystem-colliding-run-ids-rejected (slash=$slash_rc upper=$upper_rc lower=$lower_rc)"
+  failures=1
+fi
+rm -rf "$REPO"
+
+make_repo
+run_preflight wrong-branch main --expected-branch other >/dev/null 2>&1
 rc=$?
-if [ "$rc" -eq 1 ]; then
-  echo "PASS traversal run-id rejected"
-else
-  echo "FAIL traversal run-id rejected (rc=$rc)"
-  failures=1
-fi
+[ "$rc" -eq 1 ] && echo "PASS expected-branch-enforced" \
+  || { echo "FAIL expected-branch-enforced (rc=$rc)"; failures=1; }
+(cd "$REPO" && git switch -q main)
+run_preflight target-branch main --expected-branch main >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 1 ] && echo "PASS target-cannot-own-run" \
+  || { echo "FAIL target-cannot-own-run (rc=$rc)"; failures=1; }
+(cd "$REPO" && git switch -q task)
+run_preflight non-branch HEAD --expected-branch task >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 1 ] && echo "PASS non-branch-target-rejected" \
+  || { echo "FAIL non-branch-target-rejected (rc=$rc)"; failures=1; }
 rm -rf "$REPO"
 
 make_repo
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" 'same/id' main >/dev/null 2>&1
-slash_rc=$?
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" 'same-id' main >/dev/null 2>&1
-plain_rc=$?
-if [ "$slash_rc" -eq 1 ] && [ "$plain_rc" -eq 0 ] \
-  && [ -f "$REPO/$STATE_REL/execute-task-runs/same-id.md" ]; then
-  echo "PASS colliding run-id rejected"
-else
-  echo "FAIL colliding run-id rejected (slash=$slash_rc, plain=$plain_rc)"
-  failures=1
-fi
+run_preflight shared-run main --expected-branch task >/dev/null
+(cd "$REPO" && git switch -qc other)
+run_preflight shared-run main --expected-branch other >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 1 ] && echo "PASS cross-branch-reuse-rejected" \
+  || { echo "FAIL cross-branch-reuse-rejected (rc=$rc)"; failures=1; }
 rm -rf "$REPO"
 
 make_repo
-TARGET_SHA="$(git -C "$REPO" rev-parse HEAD)"
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" pinned main >/dev/null
-if grep -qx "target_sha=$TARGET_SHA" "$REPO/$STATE_REL/execute-task-runs/pinned.meta"; then
-  echo "PASS target ref pinned to commit"
-else
-  echo "FAIL target ref pinned to commit"
-  failures=1
-fi
+run_preflight tampered main --expected-branch task >/dev/null
+sed 's/^run_id=.*/run_id=other/' "$REPO/$RUNS_REL/tampered.meta" > "$REPO/$RUNS_REL/tampered.meta.new"
+mv "$REPO/$RUNS_REL/tampered.meta.new" "$REPO/$RUNS_REL/tampered.meta"
+run_preflight tampered main --expected-branch task >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 1 ] && echo "PASS metadata-run-id-enforced" \
+  || { echo "FAIL metadata-run-id-enforced (rc=$rc)"; failures=1; }
 rm -rf "$REPO"
 
 make_repo
-OUTSIDE="$(mktemp -d)"
+OUTSIDE="$(mktemp -d)" || exit 1
 ln -s "$OUTSIDE" "$REPO/.agent-state"
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" symlink main >/dev/null 2>&1
+run_preflight symlink main --expected-branch task >/dev/null 2>&1
 rc=$?
 if [ "$rc" -eq 1 ] && [ ! -e "$OUTSIDE/codex-tuner/execute-task-runs/symlink.md" ]; then
-  echo "PASS symlinked state rejected"
+  echo "PASS symlinked-state-rejected"
 else
-  echo "FAIL symlinked state rejected (rc=$rc)"
+  echo "FAIL symlinked-state-rejected (rc=$rc)"
   failures=1
 fi
-rm -rf "$REPO" "$OUTSIDE"
+rm -rf "$OUTSIDE" "$REPO"
 
-make_repo
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" seed main >/dev/null
-OUTSIDE_FILE="$(mktemp)"
-printf 'outside-safe\n' > "$OUTSIDE_FILE"
-ln -s "$OUTSIDE_FILE" "$REPO/$STATE_REL/execute-task-runs/file-link.md"
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" file-link main >/dev/null 2>&1
+NOGIT="$(mktemp -d)" || exit 1
+EXECUTE_TASK_PROJECT_DIR="$NOGIT" bash "$SCRIPT" bad-root main --expected-branch task >/dev/null 2>&1
 rc=$?
-if [ "$rc" -eq 1 ] && [ "$(cat "$OUTSIDE_FILE")" = "outside-safe" ]; then
-  echo "PASS symlinked journal file rejected"
-else
-  echo "FAIL symlinked journal file rejected (rc=$rc)"
-  failures=1
-fi
-rm -rf "$REPO"
-rm -f "$OUTSIDE_FILE"
+[ "$rc" -eq 1 ] && echo "PASS bad-root" || { echo "FAIL bad-root (rc=$rc)"; failures=1; }
+rm -rf "$NOGIT"
 
 exit "$failures"

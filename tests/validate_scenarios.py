@@ -31,6 +31,11 @@ def fail(message: str) -> None:
 
 def main() -> int:
     root = Path(__file__).resolve().parent.parent
+    contract = json.loads(
+        (root / "plugins" / "codex-tuner" / "workflow-contract.json").read_text(
+            encoding="utf-8"
+        )
+    )
     failures = 0
 
     for scenario_path in sorted((root / "tests" / "scenarios").glob("*.json")):
@@ -46,8 +51,16 @@ def main() -> int:
             fail(f"{scenario_path.name}: missing keys {sorted(missing)}")
             failures += 1
 
-        if scenario.get("skills") != ["execute-task"]:
-            fail(f"{scenario_path.name}: skills must be ['execute-task']")
+        if scenario.get("skills") != ["run"]:
+            fail(f"{scenario_path.name}: skills must be ['run']")
+            failures += 1
+
+        port_status = scenario.get("codex_port_status", {})
+        if port_status.get("contract_version") != contract.get("version"):
+            fail(
+                f"{scenario_path.name}: codex_port_status must target contract "
+                f"{contract.get('version')}"
+            )
             failures += 1
 
         for key in ("expected_behavior", "anti_expectation"):

@@ -1,0 +1,8 @@
+interface:
+  display_name: "Specify Task"
+  short_description: "Turn a task into an executable committed spec"
+  default_prompt: "Use $codex-tuner:spec to turn this task into a committed, machine-checkable specification."
+policy:
+  products:
+    - "CODEX"
+  allow_implicit_invocation: false

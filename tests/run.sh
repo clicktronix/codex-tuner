@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-for script in "$ROOT"/plugins/codex-tuner/skills/execute-task/scripts/*.sh "$ROOT"/tests/test_*.sh; do
+for script in "$ROOT"/plugins/codex-tuner/scripts/execute-task/*.sh "$ROOT"/tests/test_*.sh; do
   bash -n "$script"
 done
 
@@ -16,8 +16,11 @@ python3 "$ROOT/tests/validate_scenarios.py"
 python3 "$ROOT/tests/validate_structure.py"
 python3 -m json.tool "$ROOT/.agents/plugins/marketplace.json" >/dev/null
 python3 -m json.tool "$ROOT/plugins/codex-tuner/.codex-plugin/plugin.json" >/dev/null
+python3 -m json.tool "$ROOT/plugins/codex-tuner/workflow-contract.json" >/dev/null
+python3 -m json.tool "$ROOT/release-please-config.json" >/dev/null
+python3 -m json.tool "$ROOT/.release-please-manifest.json" >/dev/null
 
-if rg -n '\[TODO:' "$ROOT/plugins"; then
+if grep -REn '\[TODO:' "$ROOT/plugins"; then
   echo "FAIL TODO placeholder found" >&2
   exit 1
 fi
