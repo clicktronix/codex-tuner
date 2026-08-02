@@ -9,6 +9,7 @@ PREREQ="$ROOT/plugins/codex-tuner/scripts/execute-task/prereq-check.sh"
 CONFIG="$ROOT/plugins/codex-tuner/assets/execute-task/config.template.md"
 CONTRACT="$ROOT/plugins/codex-tuner/workflow-contract.json"
 RELEASE_WORKFLOW="$ROOT/.github/workflows/release-please.yml"
+VALIDATE_WORKFLOW="$ROOT/.github/workflows/validate.yml"
 # Keep this value identical to cc-tuner and update it only in coordinated contract PRs.
 EXPECTED_SHARED_CONTRACT_SHA256="0b7678974d75ca217bf6958bb49a60c381f228ec1de6845c3ed70186162b8073"
 failures=0
@@ -85,6 +86,8 @@ need "release-pr-exact-sha" 'ref: ${{ steps.release-pr.outputs.sha }}' "$RELEASE
 need "release-pr-runs-suite" 'run: bash tests/run.sh' "$RELEASE_WORKFLOW"
 need "release-pr-fails-workflow" '[ "$state" = success ]' "$RELEASE_WORKFLOW"
 need "release-pr-create-update-gate" 'prs_created is true when a release PR is created or updated' "$RELEASE_WORKFLOW"
+need "release-checkout-current" 'uses: actions/checkout@v7' "$RELEASE_WORKFLOW"
+need "validate-checkout-current" 'uses: actions/checkout@v7' "$VALIDATE_WORKFLOW"
 
 release_pr_gate_count="$(grep -cF "steps.release.outputs.prs_created == 'true'" "$RELEASE_WORKFLOW")"
 [ "$release_pr_gate_count" -eq 4 ] && echo "PASS release-pr-gate-count" \
