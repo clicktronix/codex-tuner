@@ -16,14 +16,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - id: release
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@v5
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
       - name: Resolve release PR head
         id: release-pr
-        # In release-please-action v4, prs_created is true when a release PR is created or updated.
+        # The action sets prs_created when a release PR is created or updated.
         if: ${{ steps.release.outputs.prs_created == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
