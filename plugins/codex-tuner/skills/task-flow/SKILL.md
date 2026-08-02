@@ -1,6 +1,6 @@
 ---
 name: task-flow
-description: Use when Codex creates or reviews task branches, commits, pull requests, GitHub Projects cards, implementation plans, stacked changes, merge strategy, or post-merge cleanup. Apply the same one-task lifecycle used by codex-tuner spec/run while respecting repository-specific AGENTS.md instructions.
+description: Use for branches, commits, pull requests, GitHub Projects, plans, stacked changes, merge strategy, and cleanup. Apply codex-tuner lifecycle conventions while respecting repository AGENTS.md instructions.
 ---
 
 # Task Flow

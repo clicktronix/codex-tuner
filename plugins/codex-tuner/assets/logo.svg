@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">Codex Tuner</title>
+  <rect width="256" height="256" rx="56" fill="#0F766E"/>
+  <path d="M96 72 48 128l48 56" fill="none" stroke="#FFF" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m160 72 48 56-48 56" fill="none" stroke="#FFF" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m107 132 15 15 31-38" fill="none" stroke="#FFF" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -44,8 +44,9 @@ bash <plugin-root>/scripts/execute-task/config-init.sh \
 bash tests/run.sh
 ```
 
-CI runs the same suite on Ubuntu and macOS. Releases are maintained by release-please; do not hand-edit
-version fields independently.
+CI runs the same suite on Ubuntu and macOS. Structure validation also enforces the current
+[OpenAI plugin submission contract](https://developers.openai.com/plugins/deploy/submission-errors).
+Releases are maintained by release-please; do not hand-edit version fields independently.
 
 ## License
 

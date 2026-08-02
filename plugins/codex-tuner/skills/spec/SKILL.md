@@ -1,6 +1,6 @@
 ---
 name: spec
-description: Use when the user explicitly asks Codex to turn an issue, ticket, or rough coding task into a committed implementation specification before execution. Read the repository and current documentation, resolve product decisions interactively, create the task branch, and define machine-checkable acceptance criteria plus explicit auto-readiness for $codex-tuner:run.
+description: Use only for explicit $codex-tuner:spec invocations. Turn an issue, ticket, or rough coding task into a committed, machine-checkable specification after repository and documentation research.
 ---
 
 # Specify Task

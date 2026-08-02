@@ -20,15 +20,18 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Codex Tuner",
-    "shortDescription": "Engineering workflows for reliable Codex delivery.",
+    "shortDescription": "Verified Codex delivery",
     "longDescription": "Use spec to commit machine-checkable task intent, run to execute it with resumable phases and current-SHA gates, and task-flow for branch, PR, board, plan, merge, and cleanup conventions.",
     "developerName": "Clicktronix",
     "category": "Productivity",
     "capabilities": [
-      "Read",
-      "Write"
+      "Executable specifications",
+      "Verified pull request delivery"
     ],
     "websiteURL": "https://github.com/clicktronix/codex-tuner",
+    "brandColor": "#0F766E",
+    "composerIcon": "./assets/composer-icon.svg",
+    "logo": "./assets/logo.svg",
     "defaultPrompt": [
       "Turn this task into an executable specification.",
       "Run this committed specification through verified delivery."

@@ -1,6 +1,6 @@
 ---
 name: run
-description: Use when the user explicitly invokes $codex-tuner:run with a committed spec to execute it end to end through implementation, acceptance, review, pull request, current-SHA CI, merge, and cleanup. Without --auto, stop at every phase boundary; with --auto, proceed unattended through merge only when the spec is explicitly auto-ready and every gate is green.
+description: Use only for explicit $codex-tuner:run invocations with a committed spec. Execute implementation through PR, current-SHA CI, merge, and cleanup, pausing at phase boundaries unless --auto is authorized.
 ---
 
 # Run Specification
