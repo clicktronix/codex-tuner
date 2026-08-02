@@ -24,12 +24,11 @@ Runtime journals live under `.agent-state/codex-tuner/`. The self-ignored direct
 
 ## Install
 
-Install the bootstrap plus three runtime companion skills from the current
-[Matt Pocock repository](https://github.com/mattpocock/skills). Select `setup-matt-pocock-skills`,
-`grilling`, `domain-modeling`, and `code-review` when prompted:
+Install the three runtime companion skills from the current
+[Matt Pocock repository](https://github.com/mattpocock/skills) globally for Codex:
 
 ```bash
-npx skills@latest add mattpocock/skills
+npx skills@latest add mattpocock/skills --global --agent codex --skill grilling domain-modeling code-review --yes
 ```
 
 Install the independent Claude Code reviewer; its Phase 4 pass requires an installed and authenticated
@@ -49,9 +48,9 @@ codex plugin add codex-tuner@codex-tuner
 
 Start a new Codex thread after installation so Codex discovers the new skills. `spec` and `run` are
 explicit-only; `task-flow` can load when branch/PR lifecycle work matches its description. Run
-`/skills` to browse installed skills. Mention `$setup-matt-pocock-skills` once per repository to
-scaffold Matt Pocock's optional issue-tracker/domain-doc conventions, or invoke `$grilling`,
-`$domain-modeling`, and `$code-review` directly.
+`/skills` to browse installed skills, or invoke `$grilling`, `$domain-modeling`, and `$code-review`
+directly. `codex-tuner` passes the committed spec and tracker config directly, so Matt Pocock's
+repository bootstrap skill is not a runtime dependency.
 
 Optional stable repository defaults can be scaffolded with:
 

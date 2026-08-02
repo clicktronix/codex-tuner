@@ -8,6 +8,7 @@ trap 'rm -rf "$TMP_ROOT"' EXIT
 
 skills_root="$TMP_ROOT/skills"
 plugins_file="$TMP_ROOT/plugins.json"
+claude_auth_file="$TMP_ROOT/claude-auth.json"
 mkdir -p "$skills_root"
 
 write_plugin_state() {
@@ -16,11 +17,17 @@ write_plugin_state() {
     "$enabled" > "$plugins_file"
 }
 
+write_claude_auth_state() {
+  local logged_in="$1"
+  printf '{"loggedIn":%s}' "$logged_in" > "$claude_auth_file"
+}
+
 expect_failure() {
   local expected="$1"
   local output
   if output="$(CODEX_TUNER_SKILLS_ROOTS="$skills_root" \
     CODEX_TUNER_PLUGIN_LIST_FILE="$plugins_file" CODEX_TUNER_CLAUDE_BIN=true \
+    CODEX_TUNER_CLAUDE_AUTH_FILE="$claude_auth_file" \
     bash "$CHECK" 2>&1)"; then
     echo "FAIL prereq unexpectedly passed: $expected" >&2
     exit 1
@@ -35,6 +42,7 @@ expect_failure() {
 }
 
 write_plugin_state true
+write_claude_auth_state true
 expect_failure "Matt Pocock skill 'grilling'"
 
 for skill in grilling domain-modeling code-review; do
@@ -57,6 +65,7 @@ expect_failure "enabled codex-cc-triage plugin"
 write_plugin_state true
 result="$(CODEX_TUNER_SKILLS_ROOTS="$skills_root" \
   CODEX_TUNER_PLUGIN_LIST_FILE="$plugins_file" CODEX_TUNER_CLAUDE_BIN=true \
+  CODEX_TUNER_CLAUDE_AUTH_FILE="$claude_auth_file" \
   bash "$CHECK")"
 [ "$result" = "prereqs OK" ] || {
   echo "FAIL prereq success output: $result" >&2
@@ -68,14 +77,20 @@ mkdir -p "$alternate_root"
 cp -R "$skills_root"/. "$alternate_root"/
 result="$(CODEX_TUNER_SKILLS_ROOTS="$TMP_ROOT/empty-skills:$alternate_root" \
   CODEX_TUNER_PLUGIN_LIST_FILE="$plugins_file" CODEX_TUNER_CLAUDE_BIN=true \
+  CODEX_TUNER_CLAUDE_AUTH_FILE="$claude_auth_file" \
   bash "$CHECK")"
 [ "$result" = "prereqs OK" ] || {
   echo "FAIL prereq did not scan all configured skill roots: $result" >&2
   exit 1
 }
 
+write_claude_auth_state false
+expect_failure "authenticated Claude Code session"
+write_claude_auth_state true
+
 if output="$(CODEX_TUNER_SKILLS_ROOTS="$skills_root" \
   CODEX_TUNER_PLUGIN_LIST_FILE="$plugins_file" CODEX_TUNER_CLAUDE_BIN="$TMP_ROOT/missing-claude" \
+  CODEX_TUNER_CLAUDE_AUTH_FILE="$claude_auth_file" \
   bash "$CHECK" 2>&1)"; then
   echo "FAIL prereq unexpectedly accepted a missing Claude executable" >&2
   exit 1

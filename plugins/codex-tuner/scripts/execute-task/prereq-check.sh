@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verify companion skills/plugins required by spec and run.
 # CODEX_TUNER_SKILLS_ROOTS, CODEX_TUNER_PLUGIN_LIST_FILE, and
-# CODEX_TUNER_CLAUDE_BIN are test overrides.
+# CODEX_TUNER_CLAUDE_BIN and CODEX_TUNER_CLAUDE_AUTH_FILE are test overrides.
 set -u
 
 missing=0
@@ -45,8 +45,7 @@ for skill in grilling domain-modeling code-review; do
 done
 
 if [ "$missing" -ne 0 ]; then
-  echo "  install: npx skills@latest add mattpocock/skills" >&2
-  echo "  select: setup-matt-pocock-skills, grilling, domain-modeling, code-review" >&2
+  echo "  install: npx skills@latest add mattpocock/skills --global --agent codex --skill grilling domain-modeling code-review --yes" >&2
 fi
 
 plugin_list() {
@@ -59,10 +58,15 @@ plugin_list() {
   fi
 }
 
+python_available=false
 if ! command -v python3 >/dev/null 2>&1; then
   echo "MISSING: python3 (required by codex-cc-triage)" >&2
   missing=1
-elif ! plugin_list | python3 -c '
+else
+  python_available=true
+fi
+
+if [ "$python_available" = true ] && ! plugin_list | python3 -c '
 import json
 import sys
 
@@ -100,6 +104,30 @@ fi
 if [ "$claude_available" != true ]; then
   echo "MISSING: Claude Code executable '$claude_bin' (required by claude-review)" >&2
   echo "  install/authenticate Claude Code, then retry in a new Codex thread" >&2
+  missing=1
+fi
+
+claude_auth_status() {
+  if [ -n "${CODEX_TUNER_CLAUDE_AUTH_FILE:-}" ]; then
+    cat -- "$CODEX_TUNER_CLAUDE_AUTH_FILE"
+  else
+    "$claude_bin" auth status --json 2>/dev/null
+  fi
+}
+
+if [ "$claude_available" = true ] && [ "$python_available" = true ] &&
+  ! claude_auth_status | python3 -c '
+import json
+import sys
+
+try:
+    status = json.load(sys.stdin)
+except json.JSONDecodeError:
+    raise SystemExit(1)
+
+raise SystemExit(0 if isinstance(status, dict) and status.get("loggedIn") is True else 1)
+'; then
+  echo "MISSING: authenticated Claude Code session (run: $claude_bin auth login)" >&2
   missing=1
 fi
 
