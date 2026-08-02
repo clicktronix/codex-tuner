@@ -134,12 +134,13 @@ bash "<plugin-root>/scripts/execute-task/journal.sh" resume <literal-run-id>
    bash "<plugin-root>/scripts/execute-task/guard-artifacts.sh" <literal-run-id>
    git diff --cached
    ```
-3. Commit conventionally, push with tracking, find or create the PR, then journal its literal number
-   and pushed SHA. The PR body links the issue/spec and lists scope, verification, and limitations:
+3. Commit conventionally, push with tracking, find or create the PR with a literal title, then journal
+   its literal number and pushed SHA. The prepared PR body links the issue/spec and lists scope,
+   verification, and limitations:
    ```bash
    git commit -m "<type>: <imperative summary>"
    git push -u origin <literal-branch>
-   gh pr view <literal-branch> --json number,url,headRefOid,baseRefName || gh pr create --base <literal-target> --head <literal-branch> --body-file <prepared-body-file>
+   gh pr view <literal-branch> --json number,url,headRefOid,baseRefName || gh pr create --base <literal-target> --head <literal-branch> --title "<literal-title>" --body-file <prepared-body-file>
    ```
 4. Confirm the PR base equals the literal target and its remote head equals the journaled SHA. Run or
    observe required CI on that SHA. Missing, skipped, stale, or red checks are not green.

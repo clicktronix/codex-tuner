@@ -4,6 +4,24 @@ set -u
 SCRIPTS="$(cd "$(dirname "$0")/../plugins/codex-tuner/scripts/execute-task" && pwd)"
 STATE_REL=".agent-state/codex-tuner"
 failures=0
+
+PATH_REPO="$(mktemp -d)" || exit 1
+(
+  cd "$PATH_REPO" && git init -q -b main && git config user.email test@example.com \
+    && git config user.name test && printf 'base\n' > file.txt && git add file.txt \
+    && git commit -qm init
+) || exit 1
+OUT="$(EXECUTE_TASK_PROJECT_DIR="$PATH_REPO" bash "$SCRIPTS/journal.sh" path pure-path 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] \
+  && [ "$OUT" = ".agent-state/codex-tuner/execute-task-runs/pure-path.md" ] \
+  && [ ! -e "$PATH_REPO/.agent-state" ]; then
+  echo "PASS path-has-no-state-side-effect"
+else
+  echo "FAIL path-has-no-state-side-effect (rc=$rc out=$OUT)"
+  failures=1
+fi
+rm -rf "$PATH_REPO"
+
 REPO="$(mktemp -d)" || exit 1
 (
   cd "$REPO" && git init -q -b main && git config user.email test@example.com \
@@ -61,6 +79,14 @@ rc=$?
 EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/journal.sh" resume run-1 banana >/dev/null 2>&1
 rc=$?
 [ "$rc" -eq 1 ] && echo "PASS resume-bad-count" || { echo "FAIL resume-bad-count"; failures=1; }
+
+OUT="$(EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/journal.sh" resume run-1 999999999999999999999 2>&1)"; rc=$?
+if [ "$rc" -eq 1 ] && printf '%s' "$OUT" | grep -q 'at most 7 digits'; then
+  echo "PASS resume-huge-count-rejected"
+else
+  echo "FAIL resume-huge-count-rejected (rc=$rc out=$OUT)"
+  failures=1
+fi
 
 (
   cd "$REPO" && printf 'second\n' > second.txt && git add second.txt && git commit -qm second

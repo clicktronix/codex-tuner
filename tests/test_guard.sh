@@ -76,6 +76,29 @@ fi
 rm -rf "$REPO"
 
 make_repo
+EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$PREFLIGHT" invalid-anchor main --expected-branch task >/dev/null
+sed 's/^target_sha=.*/target_sha=(unborn)/' "$REPO/$STATE_REL/execute-task-runs/invalid-anchor.meta" \
+  > "$REPO/$STATE_REL/execute-task-runs/invalid-anchor.meta.new"
+mv "$REPO/$STATE_REL/execute-task-runs/invalid-anchor.meta.new" \
+  "$REPO/$STATE_REL/execute-task-runs/invalid-anchor.meta"
+EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" invalid-anchor >/dev/null 2>&1
+unborn_rc=$?
+sed 's/^target_sha=.*/target_sha=gggggggggggggggggggggggggggggggggggggggg/' \
+  "$REPO/$STATE_REL/execute-task-runs/invalid-anchor.meta" \
+  > "$REPO/$STATE_REL/execute-task-runs/invalid-anchor.meta.new"
+mv "$REPO/$STATE_REL/execute-task-runs/invalid-anchor.meta.new" \
+  "$REPO/$STATE_REL/execute-task-runs/invalid-anchor.meta"
+EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" invalid-anchor >/dev/null 2>&1
+non_hex_rc=$?
+if [ "$unborn_rc" -eq 1 ] && [ "$non_hex_rc" -eq 1 ]; then
+  echo "PASS invalid target anchors rejected"
+else
+  echo "FAIL invalid target anchors rejected (unborn=$unborn_rc non_hex=$non_hex_rc)"
+  failures=1
+fi
+rm -rf "$REPO"
+
+make_repo
 EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$PREFLIGHT" wrong-branch main --expected-branch task >/dev/null
 (cd "$REPO" && git switch -qc other)
 EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" wrong-branch >/dev/null 2>&1
