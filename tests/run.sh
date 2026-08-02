@@ -20,7 +20,7 @@ python3 -m json.tool "$ROOT/plugins/codex-tuner/workflow-contract.json" >/dev/nu
 python3 -m json.tool "$ROOT/release-please-config.json" >/dev/null
 python3 -m json.tool "$ROOT/.release-please-manifest.json" >/dev/null
 
-if rg -n '\[TODO:' "$ROOT/plugins"; then
+if grep -REn '\[TODO:' "$ROOT/plugins"; then
   echo "FAIL TODO placeholder found" >&2
   exit 1
 fi

@@ -62,7 +62,7 @@ resume_count="$(grep -cF 'journal.sh" resume <literal-run-id>' "$RUN")"
 [ "$resume_count" -eq 8 ] && echo "PASS resume-count" \
   || { echo "FAIL resume-count (got $resume_count, want 8)"; failures=1; }
 
-if rg -n 'glab|effort_tiering|small_diff_budget|assets/tiering|≤50 changed lines|≤5 files' "$SPEC" "$RUN" "$CONFIG" >/dev/null; then
+if grep -En 'glab|effort_tiering|small_diff_budget|assets/tiering|≤50 changed lines|≤5 files' "$SPEC" "$RUN" "$CONFIG" >/dev/null; then
   echo "FAIL ignored-or-duplicated-policy"
   failures=1
 else
