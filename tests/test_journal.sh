@@ -8,10 +8,10 @@ REPO="$(mktemp -d)" || exit 1
 (
   cd "$REPO" && git init -q -b main && git config user.email test@example.com \
     && git config user.name test && printf 'base\n' > file.txt && git add file.txt \
-    && git commit -qm init
+    && git commit -qm init && git switch -qc task
 ) || exit 1
 
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/preflight.sh" run-1 main --require-clean >/dev/null
+EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/preflight.sh" run-1 main --expected-branch task >/dev/null
 EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/journal.sh" append run-1 "focused tests passed"
 if grep -q "focused tests passed" "$REPO/$STATE_REL/execute-task-runs/run-1.md"; then
   echo "PASS append"
@@ -66,12 +66,27 @@ rc=$?
   cd "$REPO" && printf 'second\n' > second.txt && git add second.txt && git commit -qm second
 )
 NEW_SHA="$(cd "$REPO" && git rev-parse HEAD)"
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/preflight.sh" run-1 main --require-clean >/dev/null
+EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/preflight.sh" run-1 main --expected-branch task >/dev/null
 OUT="$(EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/journal.sh" resume run-1 1 2>&1)"
 if printf '%s' "$OUT" | grep -q "$NEW_SHA" && printf '%s' "$OUT" | grep -q 'supersedes'; then
   echo "PASS resume-restart-base"
 else
   echo "FAIL resume-restart-base"
+  failures=1
+fi
+
+(cd "$REPO" && git switch -qc other)
+cross_branch_ok=1
+for operation in "append run-1 cross-branch" "read run-1" "resume run-1"; do
+  # shellcheck disable=SC2086
+  EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/journal.sh" $operation >/dev/null 2>&1
+  rc=$?
+  [ "$rc" -eq 1 ] || cross_branch_ok=0
+done
+if [ "$cross_branch_ok" -eq 1 ]; then
+  echo "PASS cross-branch-journal-operations-rejected"
+else
+  echo "FAIL cross-branch-journal-operations-rejected"
   failures=1
 fi
 

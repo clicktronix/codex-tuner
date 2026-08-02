@@ -52,7 +52,7 @@
   },
   "codex_port_status": {
     "date": "2026-08-02",
-    "plugin_version": "0.3.0",
+    "contract_version": "1.1.0",
     "status": "structurally ported; fresh isolated model probe required",
     "note": "Removed the stale 0.1.0 green claim rather than presenting it as evidence for the new spec/run flow."
   }

@@ -1,6 +1,6 @@
 {
   "name": "codex-tuner",
-  "version": "0.3.0",
+  "version": "0.2.0",
   "description": "Codex-native spec, run, and task-flow skills for machine-checkable planning and verified delivery through PR and merge.",
   "author": {
     "name": "Clicktronix",

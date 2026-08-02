@@ -12,12 +12,12 @@ make_repo() {
   (
     cd "$REPO" && git init -q && git checkout -qb main && git config user.email test@example.com \
       && git config user.name test && echo base > file.txt && git add file.txt \
-      && git commit -qm init
+      && git commit -qm init && git switch -qc task
   ) || exit 1
 }
 
 make_repo
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$PREFLIGHT" staged main >/dev/null
+EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$PREFLIGHT" staged main --expected-branch task >/dev/null
 (cd "$REPO" && git add -f "$STATE_REL/execute-task-runs/staged.md")
 EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" staged >/dev/null 2>&1
 rc=$?
@@ -30,7 +30,7 @@ fi
 rm -rf "$REPO"
 
 make_repo
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$PREFLIGHT" history main >/dev/null
+EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$PREFLIGHT" history main --expected-branch task >/dev/null
 (
   cd "$REPO" && git add -f "$STATE_REL/execute-task-runs/history.md" \
     && git commit -qm "add local artifact" \
@@ -48,7 +48,7 @@ fi
 rm -rf "$REPO"
 
 make_repo
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$PREFLIGHT" normal main >/dev/null
+EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$PREFLIGHT" normal main --expected-branch task >/dev/null
 echo change >> "$REPO/file.txt"
 EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" normal >/dev/null 2>&1
 rc=$?
@@ -61,7 +61,7 @@ fi
 rm -rf "$REPO"
 
 make_repo
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$PREFLIGHT" tracked-ignore main >/dev/null
+EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$PREFLIGHT" tracked-ignore main --expected-branch task >/dev/null
 printf 'keep-this-content\n' > "$REPO/$STATE_REL/.gitignore"
 (cd "$REPO" && git add -f "$STATE_REL/.gitignore")
 EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" tracked-ignore >/dev/null 2>&1
@@ -71,6 +71,19 @@ if [ "$rc" -eq 3 ] \
   echo "PASS tracked state refused without mutation"
 else
   echo "FAIL tracked state refused without mutation (rc=$rc)"
+  failures=1
+fi
+rm -rf "$REPO"
+
+make_repo
+EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$PREFLIGHT" wrong-branch main --expected-branch task >/dev/null
+(cd "$REPO" && git switch -qc other)
+EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" wrong-branch >/dev/null 2>&1
+rc=$?
+if [ "$rc" -eq 1 ]; then
+  echo "PASS cross-branch-guard-rejected"
+else
+  echo "FAIL cross-branch-guard-rejected (rc=$rc)"
   failures=1
 fi
 rm -rf "$REPO"

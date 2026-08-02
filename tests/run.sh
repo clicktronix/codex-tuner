@@ -16,7 +16,7 @@ python3 "$ROOT/tests/validate_scenarios.py"
 python3 "$ROOT/tests/validate_structure.py"
 python3 -m json.tool "$ROOT/.agents/plugins/marketplace.json" >/dev/null
 python3 -m json.tool "$ROOT/plugins/codex-tuner/.codex-plugin/plugin.json" >/dev/null
-python3 -m json.tool "$ROOT/workflow-contract.json" >/dev/null
+python3 -m json.tool "$ROOT/plugins/codex-tuner/workflow-contract.json" >/dev/null
 python3 -m json.tool "$ROOT/release-please-config.json" >/dev/null
 python3 -m json.tool "$ROOT/.release-please-manifest.json" >/dev/null
 

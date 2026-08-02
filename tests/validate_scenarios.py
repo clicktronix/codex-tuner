@@ -31,6 +31,11 @@ def fail(message: str) -> None:
 
 def main() -> int:
     root = Path(__file__).resolve().parent.parent
+    contract = json.loads(
+        (root / "plugins" / "codex-tuner" / "workflow-contract.json").read_text(
+            encoding="utf-8"
+        )
+    )
     failures = 0
 
     for scenario_path in sorted((root / "tests" / "scenarios").glob("*.json")):
@@ -51,8 +56,11 @@ def main() -> int:
             failures += 1
 
         port_status = scenario.get("codex_port_status", {})
-        if port_status.get("plugin_version") != "0.3.0":
-            fail(f"{scenario_path.name}: codex_port_status must target plugin 0.3.0")
+        if port_status.get("contract_version") != contract.get("version"):
+            fail(
+                f"{scenario_path.name}: codex_port_status must target contract "
+                f"{contract.get('version')}"
+            )
             failures += 1
 
         for key in ("expected_behavior", "anti_expectation"):

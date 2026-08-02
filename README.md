@@ -12,9 +12,10 @@ instruction surfaces.
   boundary. `--auto` never authorizes deploy, publish, or migration.
 - `$codex-tuner:task-flow` supplies branch, commit, PR, board, plan, merge, and cleanup conventions.
 
-The harness-neutral invariants are versioned in `workflow-contract.json`. Claude-specific statusline,
-memory-file, and Stop-hook features remain outside this repository; semantic workflow parity does not
-require copying harness-only surfaces.
+The harness-neutral invariants are versioned in
+`plugins/codex-tuner/workflow-contract.json`. Claude-specific statusline, memory-file, and Stop-hook
+features remain outside this repository; semantic workflow parity does not require copying
+harness-only surfaces.
 
 Runtime journals live under `.agent-state/codex-tuner/`. The self-ignored directory avoids protected
 `.git/` writes and works in Codex's default workspace sandbox. The artifact guard also covers the legacy

@@ -28,11 +28,12 @@ is not ready.
 Tag each criterion:
 
 - `[machine]`: an exact command or browser-driving step decides it.
-- `[eyes]`: human judgement cannot be reduced to an observable check.
+- `[eyes]`: human judgement cannot be reduced to an observable check; name the concrete human step.
 
-Every `[eyes]` item needs a machine replacement or a dated user waiver. A bare `[eyes]` criterion makes
-the spec not auto-ready. More than one PR, more than one repository, or independently reviewed phases
-require an epic with sub-issues and one spec per sub-issue.
+Every `[eyes]` item records its human step, machine replacement (or `none`), and dated waiver (or
+`none`). An item with neither replacement nor waiver is valid only with `auto_ready: no`: HITL `run`
+will stop for that human step, while `--auto` must reject the spec. More than one PR, more than one
+repository, or independently reviewed phases require an epic with sub-issues and one spec per sub-issue.
 
 ## Create the task branch
 
@@ -56,7 +57,7 @@ Write `<plans-root>/PLANS/YYYY-MM-DD-<slug>.md`, using `wiki/` when present and 
 
 ## Acceptance criteria
 - [ ] [machine] <criterion> — checked by: <exact command or tool step>
-- [ ] [eyes] <criterion> — machine replacement: <check> | WAIVED by <user> on <date>
+- [ ] [eyes] <criterion> — checked by: <human step>; machine replacement: <exact check|none>; waiver: <user/date|none>
 
 ## Tasks
 1. <file path> — <change and reason>
@@ -72,15 +73,17 @@ auto_ready: yes|no — <reason when no>
 ci: <exact command or check source>
 cheap_gate: <exact command>
 test: <exact command>
-tracker: gh|glab|none
+tracker: gh|none
 board: <project title + owner | none>
 ```
 
-Set `auto_ready: yes` only for one PR with nonblank CI and no bare `[eyes]` item. This records
-capability; only invoking `$codex-tuner:run --auto <spec>` requests unattended execution.
+Set `auto_ready: yes` only for one PR with nonblank CI and a machine replacement or waiver for every
+`[eyes]` item. This records capability; only invoking `$codex-tuner:run --auto <spec>` requests
+unattended execution.
 
 Inspect the diff, stage only the spec path, and commit it with a Conventional Commit. Create or update
-the issue so it and the spec link to each other.
+the issue so it and the spec link to each other when `tracker: gh`; with `tracker: none`, record why
+there is no issue.
 
 ## Hand off
 
@@ -93,4 +96,4 @@ $codex-tuner:run --auto docs/PLANS/2026-07-31-thing.md
 ```
 
 Verify that every criterion names its deciding check, no executor-owned product decision remains, the
-spec is committed on its task branch, and the issue links both ways.
+spec is committed on its task branch, and the issue links both ways or `tracker: none` is explained.
