@@ -24,6 +24,15 @@ need() {
   fi
 }
 
+release_action_is_current() {
+  ruby -ryaml - "$1" <<'RB'
+workflow = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: false)
+steps = workflow.fetch("jobs").fetch("release-please").fetch("steps")
+release_step = steps.find { |step| step["id"] == "release" }
+abort unless release_step&.fetch("uses", nil) == "googleapis/release-please-action@v5"
+RB
+}
+
 contract_sha256() {
   if command -v shasum >/dev/null 2>&1; then
     shasum -a 256 "$1" | awk '{print $1}'
@@ -85,9 +94,23 @@ need "release-pr-status" 'context=release-pr/validate' "$RELEASE_WORKFLOW"
 need "release-pr-exact-sha" 'ref: ${{ steps.release-pr.outputs.sha }}' "$RELEASE_WORKFLOW"
 need "release-pr-runs-suite" 'run: bash tests/run.sh' "$RELEASE_WORKFLOW"
 need "release-pr-fails-workflow" '[ "$state" = success ]' "$RELEASE_WORKFLOW"
-need "release-pr-create-update-gate" 'prs_created is true when a release PR is created or updated' "$RELEASE_WORKFLOW"
+need "release-pr-create-update-gate" 'sets prs_created when a release PR is created or updated' "$RELEASE_WORKFLOW"
 need "release-checkout-current" 'uses: actions/checkout@v7' "$RELEASE_WORKFLOW"
 need "validate-checkout-current" 'uses: actions/checkout@v7' "$VALIDATE_WORKFLOW"
+release_action_is_current "$RELEASE_WORKFLOW" \
+  && echo "PASS release-action-node24" \
+  || { echo "FAIL release-action-node24"; failures=1; }
+
+release_mutation="$(mktemp)"
+trap 'rm -f "$release_mutation"' EXIT
+sed 's|uses: googleapis/release-please-action@v5|uses: googleapis/release-please-action@v4|' \
+  "$RELEASE_WORKFLOW" > "$release_mutation"
+if release_action_is_current "$release_mutation" 2>/dev/null; then
+  echo "FAIL release-action-node24-mutation"
+  failures=1
+else
+  echo "PASS release-action-node24-mutation"
+fi
 
 release_pr_gate_count="$(grep -cF "steps.release.outputs.prs_created == 'true'" "$RELEASE_WORKFLOW")"
 [ "$release_pr_gate_count" -eq 4 ] && echo "PASS release-pr-gate-count" \
