@@ -7,7 +7,8 @@ description: Use only for explicit $codex-tuner:run invocations with a committed
 
 Parse the invocation as `[--auto] <spec-path>`. No spec path means stop; never reconstruct one from
 chat. Explicit `--auto` authorizes task-scoped commit, push, PR creation/update, and merge to the spec's
-target after green CI. It never authorizes deploy, publish, migration, force-push, or extra scope.
+target after green CI. Explicit `run` invocation also authorizes the task-scoped, read-only Claude Code
+review in Phase 4. It never authorizes deploy, publish, migration, force-push, or extra scope.
 
 Resolve `<plugin-root>` as two directories above this skill. Read:
 
@@ -38,19 +39,23 @@ to continue. Do not re-litigate the spec. With `--auto`, continue unless a hard 
 
 ## Phase 0 — open
 
-1. Derive one stable run ID from the spec slug using only lowercase ASCII letters, digits, `.`, `_`,
+1. Verify the companion skills and independent reviewer before opening run state:
+   ```bash
+   bash "<plugin-root>/scripts/execute-task/prereq-check.sh"
+   ```
+2. Derive one stable run ID from the spec slug using only lowercase ASCII letters, digits, `.`, `_`,
    and `-`; keep it unchanged across restarts. Resolve literal `branch`, `target`, and `auto_ready`.
    Confirm the current branch matches `branch`, is not `target`, contains the committed spec, and has
    no merged PR. For a legacy spec without `branch`, derive and journal ownership unambiguously; never
    create a second branch blindly.
-2. Require every `[eyes]` item to name `checked by`, `machine replacement`, and `waiver`. Refuse
+3. Require every `[eyes]` item to name `checked by`, `machine replacement`, and `waiver`. Refuse
    `--auto` unless the spec says `auto_ready: yes`, CI is nonblank, the scope is one PR, and every
    `[eyes]` item has a replacement or waiver. `auto_ready: no` is authoritative.
-3. Require a clean baseline and open the journal:
+4. Require a clean baseline and open the journal:
    ```bash
    bash "<plugin-root>/scripts/execute-task/preflight.sh" <literal-run-id> <literal-target> --expected-branch <literal-branch>
    ```
-4. Journal the spec path, Run config, acceptance criteria verbatim, branch, target, and base SHA. Move
+5. Journal the spec path, Run config, acceptance criteria verbatim, branch, target, and base SHA. Move
    the configured card to In Progress after recording its prior status.
 
 Apply the phase boundary.
@@ -98,15 +103,19 @@ bash "<plugin-root>/scripts/execute-task/journal.sh" resume <literal-run-id>
 Read small-diff thresholds and sensitive surfaces from `workflow-contract.json`; use
 `references/tiering.md` only for effort selection.
 
-1. Review the complete committed, staged, unstaged, and untracked change set yourself.
-2. Unless the diff is within both contract-defined small-diff thresholds and confidently
-   non-sensitive, obtain an independent complete-diff review using an available isolated reviewer. On
-   sensitive work, keep the main review at `xhigh` and never delegate judgement blind.
+1. Review the complete committed, staged, unstaged, and untracked change set yourself. Use `xhigh`
+   unless the diff is within both contract-defined small-diff thresholds and confidently
+   non-sensitive.
+2. Invoke `$codex-cc-triage:claude-review` with the literal target ref, task-scoped thread name, spec,
+   acceptance criteria, and unbiased review lenses. This reviewer covers committed, staged, unstaged,
+   and untracked task changes. Reuse the same thread after fixes.
 3. Validate each finding against live code. Mark it fixed, refuted with `file:line`, or deferred to an
    issue. Reviewer approval supports judgement; it never replaces tests.
-4. Re-run the cheap gate and affected acceptance paths after fixes.
+4. Re-run the cheap gate and affected acceptance paths after fixes. Journal the Phase 4 review state
+   and its pending committed-diff gate. The Matt standards/spec review runs against committed `HEAD`
+   in Phase 6, before push, because `$code-review` intentionally ignores worktree-only changes.
 
-Journal final review state and apply the boundary.
+Apply the boundary.
 
 ## Phase 5 — finalize the branch
 
@@ -134,15 +143,23 @@ bash "<plugin-root>/scripts/execute-task/journal.sh" resume <literal-run-id>
    bash "<plugin-root>/scripts/execute-task/guard-artifacts.sh" <literal-run-id>
    git diff --cached
    ```
-3. Commit conventionally, push with tracking, find or create the PR with a literal title, then journal
-   its literal number and pushed SHA. The prepared PR body links the issue/spec and lists scope,
-   verification, and limitations:
+3. Commit conventionally:
    ```bash
    git commit -m "<type>: <imperative summary>"
+   ```
+   Before push, invoke `$code-review` with the journaled literal base SHA as its fixed point and the
+   committed spec path as its spec source. Because that path is supplied directly, do not require or
+   create `docs/agents/issue-tracker.md` solely for this review. Run both Standards and Spec axes. Fix
+   or refute every finding. For accepted fixes, repeat explicit staging and the artifact guard before
+   a new commit; never amend. Re-run affected checks and repeat `$code-review` against the same base
+   until both axes have no unresolved blocking finding.
+4. Push with tracking, find or create the PR with a literal title, then journal its literal number and
+   pushed SHA. The prepared PR body links the issue/spec and lists scope, verification, and limitations:
+   ```bash
    git push -u origin <literal-branch>
    gh pr view <literal-branch> --json number,url,headRefOid,baseRefName || gh pr create --base <literal-target> --head <literal-branch> --title "<literal-title>" --body-file <prepared-body-file>
    ```
-4. Confirm the PR base equals the literal target and its remote head equals the journaled SHA. Run or
+5. Confirm the PR base equals the literal target and its remote head equals the journaled SHA. Run or
    observe required CI on that SHA. Missing, skipped, stale, or red checks are not green.
 
 In HITL mode, show the PR and CI and stop before merge. In `--auto`, continue only on green required CI.

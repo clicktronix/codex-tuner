@@ -7,21 +7,40 @@ description: Use only for explicit $codex-tuner:spec invocations. Turn an issue,
 
 Produce a committed spec that `$codex-tuner:run` can execute without re-opening product decisions.
 This skill owns questions; `run` owns delivery. Explicit invocation authorizes creating the task branch,
-committing the spec, and creating or updating its tracker issue, but not implementation or merge.
+committing the spec and domain-model artifacts, and creating or updating its tracker issue, but not
+implementation or merge.
+
+Resolve `<plugin-root>` as two directories above this skill and verify companion skills before doing
+task work:
+
+```bash
+bash "<plugin-root>/scripts/execute-task/prereq-check.sh"
+```
 
 ## Read before asking
 
 Read, in order:
 
-1. The nearest `AGENTS.md` files and repository documentation.
+1. The nearest `AGENTS.md` files, repository documentation, and existing `CONTEXT.md` or
+   `CONTEXT-MAP.md` domain vocabulary.
 2. The referenced issue and repo-specific task-flow configuration.
 3. The code, tests, consumers, and architecture boundaries the task touches.
 4. Current primary documentation for versioned libraries, APIs, CLIs, and cloud services, using the
    documentation mechanism required by the repository.
 
-Do not ask for information already available there. Ask one question at a time until answers stop
-changing the draft. A pending `TBD`, "as appropriate", or an unstated first failing test means the spec
-is not ready.
+Do not ask for information already available there.
+
+## Grill and model
+
+Invoke `$grilling` before drafting. Ask one decision question at a time, include a recommended answer,
+and wait for the user's answer. Continue until the user confirms shared understanding; do not implement
+while grilling.
+
+Invoke `$domain-modeling` when the task introduces or changes domain vocabulary, context boundaries, or
+a durable architectural trade-off. Challenge the model during grilling, but do not write its glossary
+or ADR changes until the task branch below is selected. Then apply only the artifacts the skill calls
+for; do not create them when the domain model did not change. A pending `TBD`, "as appropriate", or an
+unstated first failing test means the spec is not ready.
 
 ## Define acceptance and scope
 
@@ -81,9 +100,10 @@ Set `auto_ready: yes` only for one PR with nonblank CI and a machine replacement
 `[eyes]` item. This records capability; only invoking `$codex-tuner:run --auto <spec>` requests
 unattended execution.
 
-Inspect the diff, stage only the spec path, and commit it with a Conventional Commit. Create or update
-the issue so it and the spec link to each other when `tracker: gh`; with `tracker: none`, record why
-there is no issue.
+Inspect the diff, stage only the spec and any `CONTEXT.md`, `CONTEXT-MAP.md`, or ADR files produced by
+this task's domain-modeling pass, and commit them with a Conventional Commit. Create or update the issue
+so it and the spec link to each other when `tracker: gh`; with `tracker: none`, record why there is no
+issue.
 
 ## Hand off
 

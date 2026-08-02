@@ -9,7 +9,8 @@ instruction surfaces.
   task branch, and commits a machine-checkable spec with explicit `auto_ready` state.
 - `$codex-tuner:run [--auto] <spec>` continues that branch through implementation, acceptance, review,
   intentional staging, PR, current-SHA CI, merge, and cleanup. Without `--auto` it stops at each phase
-  boundary. `--auto` never authorizes deploy, publish, or migration.
+  boundary. Its review combines Codex self-review, a Claude Code full-worktree pass, and Matt Pocock's
+  standards/spec review of committed `HEAD`. `--auto` never authorizes deploy, publish, or migration.
 - `$codex-tuner:task-flow` supplies branch, commit, PR, board, plan, merge, and cleanup conventions.
 
 The harness-neutral invariants are versioned in
@@ -23,13 +24,33 @@ Runtime journals live under `.agent-state/codex-tuner/`. The self-ignored direct
 
 ## Install
 
+Install the three runtime companion skills from the current
+[Matt Pocock repository](https://github.com/mattpocock/skills) globally for Codex:
+
+```bash
+npx skills@latest add mattpocock/skills --global --agent codex --skill grilling domain-modeling code-review --yes
+```
+
+Install the independent Claude Code reviewer; its Phase 4 pass requires an installed and authenticated
+`claude` executable:
+
+```bash
+codex plugin marketplace add clicktronix/codex-cc-triage --ref main
+codex plugin add codex-cc-triage@codex-cc-triage
+```
+
+Then install `codex-tuner`:
+
 ```bash
 codex plugin marketplace add clicktronix/codex-tuner --ref main
 codex plugin add codex-tuner@codex-tuner
 ```
 
-Start a new Codex thread after installation. `spec` and `run` are explicit-only; `task-flow` can load
-when branch/PR lifecycle work matches its description.
+Start a new Codex thread after installation so Codex discovers the new skills. `spec` and `run` are
+explicit-only; `task-flow` can load when branch/PR lifecycle work matches its description. Run
+`/skills` to browse installed skills, or invoke `$grilling`, `$domain-modeling`, and `$code-review`
+directly. `codex-tuner` passes the committed spec and tracker config directly, so Matt Pocock's
+repository bootstrap skill is not a runtime dependency.
 
 Optional stable repository defaults can be scaffolded with:
 

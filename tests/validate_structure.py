@@ -459,10 +459,14 @@ def validate(root: Path) -> list[str]:
         "guard-artifacts.sh",
         "journal.sh",
         "lib.sh",
+        "prereq-check.sh",
         "preflight.sh",
     ):
-        if not (scripts / script).is_file():
+        script_path = scripts / script
+        if not script_path.is_file():
             errors.append(f"missing script: {script}")
+        elif script_path.stat().st_mode & 0o111 == 0:
+            errors.append(f"script is not executable: {script}")
     for asset in (
         plugin / "assets" / "execute-task" / "config.template.md",
         plugin / "references" / "tiering.md",

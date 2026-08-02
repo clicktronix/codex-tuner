@@ -42,7 +42,7 @@ jobs:
 
       - name: Check out release PR head
         if: ${{ steps.release.outputs.prs_created == 'true' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.release-pr.outputs.sha }}
           persist-credentials: false
