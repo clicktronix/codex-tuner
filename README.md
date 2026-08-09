@@ -7,10 +7,11 @@ instruction surfaces.
 
 - `$codex-tuner:spec <issue | description>` reads the repository, resolves requirements, creates the
   task branch, and commits a machine-checkable spec with explicit `auto_ready` state.
-- `$codex-tuner:run [--auto] <spec>` continues that branch through implementation, acceptance, review,
-  intentional staging, PR, current-SHA CI, merge, and cleanup. Without `--auto` it stops at each phase
-  boundary. Its review combines Codex self-review, a Claude Code full-worktree pass, and Matt Pocock's
-  standards/spec review of committed `HEAD`. `--auto` never authorizes deploy, publish, or migration.
+- `$codex-tuner:run [--auto] <spec>` publishes a visible plan before mutation, permits parallel agents
+  only for independent code-writing units, then enforces Testing & Code Verification, acceptance, an
+  immutable candidate, three exact-SHA reviews, PR/current-SHA CI, DoD, merge, and reconciliation.
+  Without `--auto` it stops at each declared boundary. `--auto` never authorizes deploy, publish, or
+  migration.
 - `$codex-tuner:task-flow` supplies branch, commit, PR, board, plan, merge, and cleanup conventions.
 
 The harness-neutral invariants are versioned in
@@ -18,9 +19,10 @@ The harness-neutral invariants are versioned in
 features remain outside this repository; semantic workflow parity does not require copying
 harness-only surfaces.
 
-Runtime journals live under `.agent-state/codex-tuner/`. The self-ignored directory avoids protected
-`.git/` writes and works in Codex's default workspace sandbox. The artifact guard also covers the legacy
-`.codex/execute-task-runs/` path.
+Authoritative run state and journals live under `.agent-state/codex-tuner/`; the published schema is
+`plugins/codex-tuner/schemas/run-state.schema.json`. The self-ignored directory avoids protected
+`.git/` writes and works in Codex's default workspace sandbox. The artifact guard also covers the
+legacy `.codex/execute-task-runs/` path.
 
 ## Install
 
@@ -31,8 +33,8 @@ Install the three runtime companion skills from the current
 npx skills@latest add mattpocock/skills --global --agent codex --skill grilling domain-modeling code-review --yes
 ```
 
-Install the independent Claude Code reviewer; its Phase 4 pass requires an installed and authenticated
-`claude` executable:
+Install or update the independent Claude Code reviewer; its Phase 6 required-review contract needs an
+installed and authenticated `claude` executable and emits approval only for the unchanged candidate:
 
 ```bash
 codex plugin marketplace add clicktronix/codex-cc-triage --ref main

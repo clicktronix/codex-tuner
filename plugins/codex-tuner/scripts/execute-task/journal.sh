@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Read or write a run journal.
-# Usage: journal.sh append|path|read|resume <run-id> [text|n]
+# Usage: journal.sh append <run-id> < message.txt
+#        journal.sh path|read <run-id>
+#        journal.sh resume <run-id> [n]
 set -u
 umask 077
 
@@ -29,12 +31,18 @@ execute_task_assert_regular_or_missing "$META"
 case "$SUBCOMMAND" in
   append)
     shift 2
-    MESSAGE="$*"
+    if [ "$#" -gt 0 ]; then
+      echo "execute-task: warning: journal append arguments are deprecated; pass the message via stdin" >&2
+      MESSAGE="$*"
+    else
+      [ ! -t 0 ] || execute_task_die "journal message must be piped on stdin"
+      MESSAGE="$(cat)" || execute_task_die "cannot read journal message from stdin"
+    fi
     [ -n "$MESSAGE" ] || execute_task_die "journal message required"
     [ -f "$JOURNAL" ] || execute_task_die "journal not found: $EXECUTE_TASK_RUNS_REL/$EXECUTE_TASK_RUN_ID.md"
     execute_task_assert_run_owner "$META"
     printf -- '- [%s] %s\n' "$(date -u +%FT%TZ)" "$MESSAGE" >> "$JOURNAL" \
-      || execute_task_die "cannot append journal"
+      || execute_task_die "cannot append journal for run '$EXECUTE_TASK_RUN_ID'"
     ;;
   read)
     [ -f "$JOURNAL" ] || execute_task_die "journal not found: $EXECUTE_TASK_RUNS_REL/$EXECUTE_TASK_RUN_ID.md"

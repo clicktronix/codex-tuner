@@ -9,12 +9,17 @@ trap 'rm -rf "$TMP_ROOT"' EXIT
 skills_root="$TMP_ROOT/skills"
 plugins_file="$TMP_ROOT/plugins.json"
 claude_auth_file="$TMP_ROOT/claude-auth.json"
+plugin_root="$TMP_ROOT/codex-cc-triage"
 mkdir -p "$skills_root"
+mkdir -p "$plugin_root/skills/claude-review" "$plugin_root/scripts"
+printf '%s\n' '--required' 'CODEX_CC_REQUIRED_REVIEW APPROVE' \
+  > "$plugin_root/skills/claude-review/SKILL.md"
+printf '%s\n' 'CODEX_CC_REQUIRED_REVIEW APPROVE' > "$plugin_root/scripts/review-state.sh"
 
 write_plugin_state() {
   local enabled="$1"
-  printf '{"installed":[{"pluginId":"codex-cc-triage@codex-cc-triage","installed":true,"enabled":%s}]}' \
-    "$enabled" > "$plugins_file"
+  printf '{"installed":[{"pluginId":"codex-cc-triage@codex-cc-triage","installed":true,"enabled":%s,"source":{"path":"%s"}}]}' \
+    "$enabled" "$plugin_root" > "$plugins_file"
 }
 
 write_claude_auth_state() {
@@ -71,6 +76,15 @@ result="$(CODEX_TUNER_SKILLS_ROOTS="$skills_root" \
   echo "FAIL prereq success output: $result" >&2
   exit 1
 }
+
+printf '%s\n' 'advisory review only' > "$plugin_root/skills/claude-review/SKILL.md"
+expect_failure "required-review contract"
+printf '%s\n' '--required' 'CODEX_CC_REQUIRED_REVIEW APPROVE' \
+  > "$plugin_root/skills/claude-review/SKILL.md"
+
+printf '%s\n' 'legacy review state' > "$plugin_root/scripts/review-state.sh"
+expect_failure "required-review contract"
+printf '%s\n' 'CODEX_CC_REQUIRED_REVIEW APPROVE' > "$plugin_root/scripts/review-state.sh"
 
 alternate_root="$TMP_ROOT/alternate-skills"
 mkdir -p "$alternate_root"

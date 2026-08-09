@@ -66,7 +66,9 @@ else
   python_available=true
 fi
 
-if [ "$python_available" = true ] && ! plugin_list | python3 -c '
+plugin_root=""
+if [ "$python_available" = true ]; then
+  plugin_root="$(plugin_list | python3 -c '
 import json
 import sys
 
@@ -75,21 +77,33 @@ try:
 except (AttributeError, json.JSONDecodeError):
     raise SystemExit(1)
 
-raise SystemExit(
-    0
-    if any(
+for plugin in plugins:
+    if (
         plugin.get("pluginId") == "codex-cc-triage@codex-cc-triage"
         and plugin.get("installed") is True
         and plugin.get("enabled") is True
-        for plugin in plugins
-    )
-    else 1
-)
-'; then
-  echo "MISSING: enabled codex-cc-triage plugin (skill: claude-review)" >&2
-  echo "  install: codex plugin marketplace add clicktronix/codex-cc-triage --ref main" >&2
-  echo "           codex plugin add codex-cc-triage@codex-cc-triage" >&2
-  missing=1
+    ):
+        path = plugin.get("source", {}).get("path")
+        if isinstance(path, str) and path:
+            print(path)
+            raise SystemExit(0)
+raise SystemExit(1)
+' 2>/dev/null || true)"
+  if [ -z "$plugin_root" ]; then
+    echo "MISSING: enabled codex-cc-triage plugin (skill: claude-review)" >&2
+    echo "  install: codex plugin marketplace add clicktronix/codex-cc-triage --ref main" >&2
+    echo "           codex plugin add codex-cc-triage@codex-cc-triage" >&2
+    missing=1
+  elif [ ! -f "$plugin_root/skills/claude-review/SKILL.md" ] \
+      || [ ! -f "$plugin_root/scripts/review-state.sh" ] \
+      || ! grep -qF -- '--required' "$plugin_root/skills/claude-review/SKILL.md" \
+      || ! grep -qF -- 'CODEX_CC_REQUIRED_REVIEW APPROVE' "$plugin_root/skills/claude-review/SKILL.md" \
+      || ! grep -qF -- 'CODEX_CC_REQUIRED_REVIEW APPROVE' "$plugin_root/scripts/review-state.sh"; then
+    echo "MISSING: codex-cc-triage required-review contract (--required + exact approval state)" >&2
+    echo "  update: codex plugin marketplace update codex-cc-triage" >&2
+    echo "          codex plugin update codex-cc-triage@codex-cc-triage" >&2
+    missing=1
+  fi
 fi
 
 claude_bin="${CODEX_TUNER_CLAUDE_BIN:-claude}"

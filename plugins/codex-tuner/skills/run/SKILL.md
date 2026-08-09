@@ -1,192 +1,267 @@
 ---
 name: run
-description: Use only for explicit $codex-tuner:run invocations with a committed spec. Execute implementation through PR, current-SHA CI, merge, and cleanup, pausing at phase boundaries unless --auto is authorized.
+description: Use only for explicit $codex-tuner:run invocations with a committed spec. Publish a visible plan, implement, prove tests, review an immutable candidate, verify current-SHA CI and DoD, then merge and reconcile.
 ---
 
 # Run Specification
 
-Parse the invocation as `[--auto] <spec-path>`. No spec path means stop; never reconstruct one from
-chat. Explicit `--auto` authorizes task-scoped commit, push, PR creation/update, and merge to the spec's
-target after green CI. Explicit `run` invocation also authorizes the task-scoped, read-only Claude Code
-review in Phase 4. It never authorizes deploy, publish, migration, force-push, or extra scope.
+Parse `[--auto] <spec-path>`. No path means stop; never reconstruct a spec from chat. Explicit
+`--auto` authorizes task-scoped commit, push, PR creation/update, and merge to the named target after
+every gate passes. It also authorizes the task-scoped read-only Claude review. It never authorizes
+deploy, publish, migration, force-push, or extra scope.
 
-Resolve `<plugin-root>` as two directories above this skill. Read:
+Resolve `<plugin-root>` as two directories above this skill. Read the committed spec,
+`workflow-contract.json`, `references/tiering.md`, `skills/task-flow/SKILL.md`, and
+`.codex/execute-task.md` only for stable defaults omitted by the spec. The spec wins.
 
-- the committed spec;
-- `<plugin-root>/workflow-contract.json`;
-- `<plugin-root>/references/tiering.md`;
-- `<plugin-root>/skills/task-flow/SKILL.md`;
-- `.codex/execute-task.md` only for stable repo defaults omitted by the spec.
+## State and phase protocol
 
-The spec wins on every field it supplies.
+`<plugin-root>/scripts/execute-task/runctl.sh` is authoritative for phases, tasks, gates, candidate,
+reviews, CI, and DoD. The Markdown journal is human audit narrative only.
 
-## Phase protocol
-
-At the top of every phase after Phase 0, before any other action:
+At every phase after readiness, first resume state and enter the next phase only when the preceding
+one is complete:
 
 ```bash
-bash "<plugin-root>/scripts/execute-task/journal.sh" resume <literal-run-id>
+bash "<plugin-root>/scripts/execute-task/runctl.sh" resume <literal-run-id>
+bash "<plugin-root>/scripts/execute-task/runctl.sh" phase <literal-run-id> enter <literal-phase>
 ```
 
-At each phase end, persist literal values a later phase would otherwise re-derive:
+A fix transition already returns to `implementation/in_progress`; resume it without entering twice.
+Pass journal, task, gate, review, and completion evidence through stdin with a quoted heredoc:
 
 ```bash
-bash "<plugin-root>/scripts/execute-task/journal.sh" append <literal-run-id> "<phase result with literal branch/SHA/PR/check values>"
+bash "<plugin-root>/scripts/execute-task/runctl.sh" task <literal-run-id> start <literal-task-id>
+bash "<plugin-root>/scripts/execute-task/runctl.sh" task <literal-run-id> complete <literal-task-id> <<'CODEX_TUNER_TASK_EVIDENCE'
+<exact diff/check/acceptance evidence>
+CODEX_TUNER_TASK_EVIDENCE
+bash "<plugin-root>/scripts/execute-task/runctl.sh" gate <literal-run-id> record <dor|testing|acceptance|dod> pass [--sha <candidate-sha>] <<'CODEX_TUNER_GATE_EVIDENCE'
+<exact command and result evidence>
+CODEX_TUNER_GATE_EVIDENCE
+bash "<plugin-root>/scripts/execute-task/runctl.sh" phase <literal-run-id> complete <literal-phase>
+bash "<plugin-root>/scripts/execute-task/journal.sh" append <literal-run-id> <<'CODEX_TUNER_EVIDENCE'
+<verbatim evidence with literal branch/SHA/PR/check values>
+CODEX_TUNER_EVIDENCE
 ```
 
-When `--auto` is absent, report the completed phase and exact next phase, then stop until the user says
-to continue. Do not re-litigate the spec. With `--auto`, continue unless a hard stop fires.
+Never pass evidence through `eval`, `bash -c`, command substitution, or a double-quoted positional
+argument.
 
-## Phase 0 — open
+Without `--auto`, stop at the end of Phases 1–7 and require separate confirmation before merge.
+Phase 0 flows directly into Phase 1 so the execution plan is visible on the initial invocation.
 
-1. Verify the companion skills and independent reviewer before opening run state:
-   ```bash
-   bash "<plugin-root>/scripts/execute-task/prereq-check.sh"
-   ```
-2. Derive one stable run ID from the spec slug using only lowercase ASCII letters, digits, `.`, `_`,
-   and `-`; keep it unchanged across restarts. Resolve literal `branch`, `target`, and `auto_ready`.
-   Confirm the current branch matches `branch`, is not `target`, contains the committed spec, and has
-   no merged PR. For a legacy spec without `branch`, derive and journal ownership unambiguously; never
-   create a second branch blindly.
-3. Require every `[eyes]` item to name `checked by`, `machine replacement`, and `waiver`. Refuse
-   `--auto` unless the spec says `auto_ready: yes`, CI is nonblank, the scope is one PR, and every
-   `[eyes]` item has a replacement or waiver. `auto_ready: no` is authoritative.
-4. Require a clean baseline and open the journal:
+## Phase 0 — readiness
+
+1. Run `scripts/execute-task/prereq-check.sh`.
+2. Derive a stable lowercase run ID. Resolve literal branch, target, and `auto_ready`; verify current
+   branch ownership, committed spec, unmerged PR state, and clean repository worktree.
+3. Validate the full DoR: problem/baseline, architecture/scope, deciding acceptance checks,
+   regression test, exact first failing command and expected failure, targeted/full/static/runtime
+   commands, environment/data, one-PR delivery, and CI source. A non-code exception needs its reason.
+4. Refuse `--auto` unless the spec says `auto_ready: yes`, `ci`, `target_test`, and `full_test` are
+   nonblank, and every `[eyes]` item has a replacement or dated waiver.
+5. Open and initialize owned state:
    ```bash
    bash "<plugin-root>/scripts/execute-task/preflight.sh" <literal-run-id> <literal-target> --expected-branch <literal-branch>
+   bash "<plugin-root>/scripts/execute-task/runctl.sh" init <literal-run-id> --mode <interactive|auto> --spec <repo-relative-spec>
    ```
-5. Journal the spec path, Run config, acceptance criteria verbatim, branch, target, and base SHA. Move
-   the configured card to In Progress after recording its prior status.
+   `init` opens `readiness/in_progress`; on restart use `resume`.
+6. Record `gate ... dor pass` with exact evidence, complete readiness, journal the literal config and
+   acceptance, and move the configured card to In Progress after recording its prior status.
 
-Apply the phase boundary.
+Continue directly to Phase 1.
 
-## Phase 1 — implement
+## Phase 1 — visible execution plan
 
-```bash
-bash "<plugin-root>/scripts/execute-task/journal.sh" resume <literal-run-id>
-```
+Resume and enter `planning`. Before editing, generating, staging, or delegating task paths, call
+`update_plan` with:
 
-Treat the Tasks list as the complete scope. Decompose by independently verifiable units
-and assign reasoning effort from `references/tiering.md`. Independent units may run concurrently
-only with isolated worktrees; dependent units run in order. Before accepting delegated output, read its
-complete diff, run the scoped cheap gate, and check its acceptance criteria.
+- one item for every sequential implementation unit; if independent units will run concurrently,
+  one aggregate implementation-batch item in the visible plan and one separate run-state task per unit;
+- Testing & Code Verification;
+- acceptance evidence;
+- candidate finalization/commit;
+- owner, Matt, and Claude review;
+- PR plus current-SHA CI;
+- DoD, merge, and reconciliation.
 
-Anything outside Tasks is a finding, not a licence. Journal it and remain in scope. Apply the boundary.
-
-## Phase 2 — cheap gate
-
-```bash
-bash "<plugin-root>/scripts/execute-task/journal.sh" resume <literal-run-id>
-```
-
-Run `cheap_gate`; fix task-introduced failures before proceeding. Establish an alleged
-pre-existing failure against the task base. After formatter or `--fix`, read its diff and re-run both
-typecheck and lint. Journal exact commands/results and apply the boundary.
-
-## Phase 3 — acceptance
+Keep at most one visible item `in_progress`, as required by `update_plan`; the aggregate batch is that
+item while its independent units execute. Add every concrete unit and lifecycle item to run state
+with an exact stable ID, phase, owned paths, acceptance slice, and deciding checks over stdin. The
+Codex plan is the visible view; run state is the source of truth. On resume, rebuild `update_plan`
+from `runctl status` before work continues.
 
 ```bash
-bash "<plugin-root>/scripts/execute-task/journal.sh" resume <literal-run-id>
+bash "<plugin-root>/scripts/execute-task/runctl.sh" task <literal-run-id> add <literal-task-id> <implementation|testing|acceptance|candidate|review|delivery> <<'CODEX_TUNER_TASK'
+<owned paths, acceptance slice, dependencies, and deciding checks>
+CODEX_TUNER_TASK
 ```
 
-Drive every `[machine]` item with its named command or browser step, then run the full
-`test` as a regression net. Resolve `[eyes]` only as recorded: drive its replacement; journal its dated
-waiver; or, in HITL, present the human step and stop until the user reports the result. An unresolved
-item is forbidden under `--auto`. Journal each criterion separately and apply the boundary.
+Complete `planning`, then apply the boundary.
 
-## Phase 4 — review
+## Phase 2 — implementation
+
+Resume and enter `implementation`; after a fix transition, only resume. This is the only phase where
+subagents may mutate product code or tests. Choose effort from `references/tiering.md`.
+
+For behavior changes, write the named regression test first and run the first failing check. Confirm
+the expected semantic failure; syntax, config, fixture, or environment failure is not RED. For a
+non-code exception, capture the promised alternative baseline.
+
+Parallelize only independent code-writing units:
+
+- one isolated worktree per unit;
+- exact non-overlapping paths, acceptance slice, and scoped commands;
+- shared contracts, schemas, migrations, generated indexes, and integration files stay parent-owned
+  unless one unit owns them exclusively;
+- subagents do not change lifecycle state, integrate other units, commit, push, review, merge, or
+  delete worktrees.
+
+Subagents may write scoped tests and run scoped checks. The parent reads each complete diff, rejects
+scope leakage, independently verifies the unit, and integrates it. Dependent or overlapping units run
+sequentially. The parent owns conflicts, authoritative testing, architecture, acceptance, delivery,
+and user communication.
+
+Before leaving the mutation phase, reconcile shipped/deferred scope. When the branch completes the
+plan, move it with `git mv` to `<plans-root>/ARCHIVE/PLANS/` and run:
 
 ```bash
-bash "<plugin-root>/scripts/execute-task/journal.sh" resume <literal-run-id>
+bash "<plugin-root>/scripts/execute-task/runctl.sh" spec <literal-run-id> relocate <new-repo-relative-spec>
 ```
 
-Read small-diff thresholds and sensitive surfaces from `workflow-contract.json`; use
-`references/tiering.md` only for effort selection.
+Complete state/plan implementation items with diff and scoped-test evidence. File out-of-scope
+findings; never absorb them silently. Complete `implementation`, then apply the boundary.
 
-1. Review the complete committed, staged, unstaged, and untracked change set yourself. Use `xhigh`
-   unless the diff is within both contract-defined small-diff thresholds and confidently
-   non-sensitive.
-2. Invoke `$codex-cc-triage:claude-review` with the literal target ref, task-scoped thread name, spec,
-   acceptance criteria, and unbiased review lenses. This reviewer covers committed, staged, unstaged,
-   and untracked task changes. Reuse the same thread after fixes.
-3. Validate each finding against live code. Mark it fixed, refuted with `file:line`, or deferred to an
-   issue. Reviewer approval supports judgement; it never replaces tests.
-4. Re-run the cheap gate and affected acceptance paths after fixes. Journal the Phase 4 review state
-   and its pending committed-diff gate. The Matt standards/spec review runs against committed `HEAD`
-   in Phase 6, before push, because `$code-review` intentionally ignores worktree-only changes.
+## Phase 3 — Testing & Code Verification
 
-Apply the boundary.
+Resume and enter `testing`. Do not write fixes while state says testing.
 
-## Phase 5 — finalize the branch
+1. Prove the regression test is green and its negative/mutation check fails when the fix is absent or
+   reversed.
+2. Run every targeted command and the full regression suite.
+3. Run required typecheck, lint, build, generated/migration, and runtime/browser checks.
+4. After formatter or `--fix`, read its entire diff and rerun both typecheck and lint.
+5. Read full status and diff; account for every file and behavior change.
+
+Establish a claimed pre-existing failure against the task base. If a fix is needed, send the reason to
+`phase <run-id> fix`, add the returned implementation item to the visible plan, and repeat from Phase
+2. Record `gate ... testing pass` with exact commands/results; it fingerprints the tested worktree.
+Complete `testing`, then apply the boundary.
+
+## Phase 4 — acceptance
+
+Resume and enter `acceptance`. Drive each `[machine]` criterion by its named check. For `[eyes]`, drive
+the recorded replacement, journal its waiver, or stop in HITL for the exact human step. `--auto`
+rejects an item without replacement or waiver.
+
+Record every result. A needed code change goes through `phase fix` and repeats Phases 2–4. Record the
+acceptance gate, complete the phase, and apply the boundary.
+
+## Phase 5 — immutable candidate
+
+Resume and enter `candidate`. Do not change the tested tree: candidate recording rejects a tree SHA
+that differs from the testing fingerprint. Inspect status and full diff, stage explicit task paths
+only, run the artifact guard, inspect the staged diff, and commit conventionally:
 
 ```bash
-bash "<plugin-root>/scripts/execute-task/journal.sh" resume <literal-run-id>
+git add -- <path-1> <path-2>
+git diff --cached --check
+bash "<plugin-root>/scripts/execute-task/guard-artifacts.sh" <literal-run-id>
+git diff --cached
+git commit -m "<type>: <imperative summary>"
 ```
 
-Tick Tasks and criteria, record shipped/deferred scope, archive a completed spec to
-`<plans-root>/ARCHIVE/PLANS/` in this branch, and run required local checks against the final tree.
-Apply the boundary. In HITL mode, continuation authorizes Phase 6's commit/push/PR actions, not merge.
+Require a clean worktree; record full HEAD through `candidate ... record <sha>` and capture its tree
+SHA. Complete `candidate`, then apply the boundary.
 
-## Phase 6 — commit, push, PR, and CI
+## Phase 6 — exact-candidate review
 
-```bash
-bash "<plugin-root>/scripts/execute-task/journal.sh" resume <literal-run-id>
-```
+Resume and enter `review`. Read the complete candidate diff and run all three layers against the same
+literal base, candidate SHA/tree, and current tracked spec:
 
-1. Inspect full status and diff. Stage only explicit task paths:
-   ```bash
-   git add -- <path-1> <path-2>
-   git diff --cached --check
+1. Perform an owner deep review across every `workflow-contract.json` review lens. All lenses always
+   run; small non-sensitive candidates may be serial, while large or sensitive candidates may fan out
+   read-only reviewer agents. Do not cap findings.
+2. Invoke `$code-review` with the fixed base and committed spec; require its Standards, Spec, and
+   architecture/systemic surfaces to have no unresolved blocking finding.
+3. Invoke the machine contract with literal `base_sha`, `candidate.sha`, `candidate.tree_sha`, and
+   `spec` from `runctl status`:
+   ```text
+   $codex-cc-triage:claude-review --required --base <literal-base-sha> --spec <current-repo-relative-spec> --thread review-<literal-run-id> --cap 5 Review the complete candidate against the spec using unbiased correctness, architecture, systemic, security/data, and testing/operability lenses.
    ```
-2. Run the guard after staging and inspect the staged diff:
-   ```bash
-   bash "<plugin-root>/scripts/execute-task/guard-artifacts.sh" <literal-run-id>
-   git diff --cached
-   ```
-3. Commit conventionally:
-   ```bash
-   git commit -m "<type>: <imperative summary>"
-   ```
-   Before push, invoke `$code-review` with the journaled literal base SHA as its fixed point and the
-   committed spec path as its spec source. Because that path is supplied directly, do not require or
-   create `docs/agents/issue-tracker.md` solely for this review. Run both Standards and Spec axes. Fix
-   or refute every finding. For accepted fixes, repeat explicit staging and the artifact guard before
-   a new commit; never amend. Re-run affected checks and repeat `$code-review` against the same base
-   until both axes have no unresolved blocking finding.
-4. Push with tracking, find or create the PR with a literal title, then journal its literal number and
-   pushed SHA. The prepared PR body links the issue/spec and lists scope, verification, and limitations:
-   ```bash
-   git push -u origin <literal-branch>
-   gh pr view <literal-branch> --json number,url,headRefOid,baseRefName || gh pr create --base <literal-target> --head <literal-branch> --title "<literal-title>" --body-file <prepared-body-file>
-   ```
-5. Confirm the PR base equals the literal target and its remote head equals the journaled SHA. Run or
-   observe required CI on that SHA. Missing, skipped, stale, or red checks are not green.
+   `--cap 5` bounds repair rounds, not findings. Require the exact self-verified
+   `CODEX_CC_REQUIRED_REVIEW APPROVE` marker with matching thread, head, tree, base and spec. Pass it
+   verbatim as Claude approval evidence; `runctl` rejects missing, duplicated, or mismatched markers.
 
-In HITL mode, show the PR and CI and stop before merge. In `--auto`, continue only on green required CI.
-
-## Phase 7 — merge and clean up
+Validate every finding against candidate source and record it as fixed, refuted with `file:line`, or
+explicitly deferred to an issue. Invocation, timeout, partial output, reviewer cap, stale candidate, or
+`REQUEST_CHANGES` is not approval. Record `owner-review`, `mattpocock`, and `claude` verdicts with the
+exact candidate through stdin.
 
 ```bash
-bash "<plugin-root>/scripts/execute-task/journal.sh" resume <literal-run-id>
+bash "<plugin-root>/scripts/execute-task/runctl.sh" review <literal-run-id> record <owner-review|mattpocock|claude> <APPROVE|REQUEST_CHANGES> <literal-candidate-sha> <<'CODEX_TUNER_REVIEW'
+<verbatim verdict, exact required-review marker when applicable, and finding dispositions>
+CODEX_TUNER_REVIEW
 ```
 
-Re-run the guard. Verify target, reviewed remote SHA, required CI, acceptance, and review
-state. Merge automatically only under `--auto`; otherwise require separate explicit confirmation.
+Any code/test change goes through `phase fix`, a new commit, and complete Phases 2–6. It invalidates
+testing, acceptance, reviews, CI, and DoD; old approval cannot move forward. Complete `review` only
+after every exact-candidate approval exists, then apply the boundary.
 
-Confirm the PR is actually `MERGED`, then sync the card: `Closes`/`Fixes` → Done; `Refs` → remain In
-Progress. Post-merge board failures are journaled, not terminal. Before leaving the owned task branch,
-append the `MERGED` state, board result, and literal cleanup plan. Then switch to the literal target,
-pull with `--ff-only`, and remove only clean worktrees and branches proven merged. Do not append to the
-branch-owned journal after switching targets.
+## Phase 7 — PR, current-SHA CI, and DoD
+
+Resume and enter `delivery`. Verify clean HEAD equals the reviewed candidate. Push, find or create the
+PR with literal base/head/title and a prepared body:
+
+```bash
+git push -u origin <literal-branch>
+gh pr view <literal-branch> --json number,url,headRefOid,baseRefName || gh pr create --base <literal-target> --head <literal-branch> --title "<literal-title>" --body-file <prepared-body-file>
+```
+
+Require candidate = reviewed SHA = pushed SHA = current PR head. Observe required hosted checks on
+that SHA; missing, skipped, stale, cancelled, billing-blocked, or red is not green. Record it through
+`ci <run-id> record success <candidate-sha> --pr <literal-pr-number>` with exact evidence.
+
+Evaluate every pre-merge DoD item from evidence, record `dod pass --sha <candidate>`, complete delivery,
+and require `can-advance` plus `can-merge`. Show PR, SHA, reviews, CI, and DoD. HITL stops for separate
+merge confirmation; `--auto` continues only after `can-merge`.
+
+## Phase 8 — merge and reconcile
+
+Resume completed delivery state; rerun the artifact guard and `can-merge`. Recheck open PR, literal
+target, exact candidate head, green required CI, acceptance, and review dispositions.
+
+Merge with the spec method automatically only under `--auto`; otherwise require the separate user
+confirmation after Phase 7. Confirm actual `MERGED` state, then synchronize issue/board according to
+`Closes`/`Fixes` versus partial `Refs`.
+
+Use GitHub's atomic head guard with the recorded PR and candidate:
+
+```bash
+gh pr merge <literal-pr-number> --squash --match-head-commit <literal-candidate-sha>
+```
+
+Use the spec's literal `--squash` or `--merge` method; never merge a moved head.
+
+While still on the owned branch, append merged/board/cleanup evidence and finish state through stdin:
+
+```bash
+bash "<plugin-root>/scripts/execute-task/runctl.sh" finish <literal-run-id> <<'CODEX_TUNER_COMPLETION'
+<literal merged PR, issue/board, spec/archive, and cleanup evidence>
+CODEX_TUNER_COMPLETION
+```
+
+Switch to the literal target, pull `--ff-only`, remove only merged clean worktrees, prune, and delete
+proven-merged refs. Do not append to branch-owned state afterward and never hard-code `main`.
 
 ## Hard stops
 
-- Red cheap gate, acceptance, full test, review, or required CI.
-- Unresolved `[eyes]` criteria or `auto_ready: no` under `--auto`.
-- Scope outside the spec or conflicting user work.
-- Deploy, publish, migration, or another production action. After merge, only board/spec/branch/
-  worktree reconciliation described in Phase 7 is authorized.
-- Force-push, `--no-verify`, broad staging, unsafe amend, or commit to target.
+- Incomplete DoR or missing visible plan.
+- Missing/false RED, red targeted/full/static/runtime/acceptance check, or unexplained diff.
+- Any unresolved `[eyes]` criterion under `--auto`.
+- Missing, failed, partial, or stale exact-candidate review, current-SHA CI, or DoD.
+- Scope outside the spec, deploy/publish/migration, force-push, bypass flags, broad staging, unsafe
+  amend, or commit to target.
 
-Report criteria with their checks, review disposition, PR/current-SHA CI, merge state, deferrals, and
-journal path. Never claim hosted CI or merge from an older SHA.
+Report criteria/evidence, reviewer dispositions, candidate/PR/current-SHA CI equality, DoD, merge,
+deferrals, reconciliation, and state path. Never claim CI or merge from an older SHA.

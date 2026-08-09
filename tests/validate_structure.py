@@ -461,6 +461,7 @@ def validate(root: Path) -> list[str]:
         "lib.sh",
         "prereq-check.sh",
         "preflight.sh",
+        "runctl.sh",
     ):
         script_path = scripts / script
         if not script_path.is_file():
@@ -470,12 +471,13 @@ def validate(root: Path) -> list[str]:
     for asset in (
         plugin / "assets" / "execute-task" / "config.template.md",
         plugin / "references" / "tiering.md",
+        plugin / "schemas" / "run-state.schema.json",
         plugin / "workflow-contract.json",
     ):
         if not asset.is_file():
             errors.append(f"missing asset: {asset.relative_to(root)}")
 
-    if contract.get("version") != "1.1.0" or len(contract.get("invariants", [])) != 14:
+    if contract.get("version") != "2.0.0" or len(contract.get("invariants", [])) != 24:
         errors.append("workflow contract mismatch")
     if release_manifest.get(".") != version:
         errors.append("release manifest version mismatch")

@@ -69,6 +69,54 @@ def main() -> int:
                 fail(f"{scenario_path.name}: {key} must be a non-empty array")
                 failures += 1
 
+        rendered = json.dumps(scenario, ensure_ascii=False)
+        stale_claude_terms = ("TaskCreate", "TaskUpdate", "Claude task list")
+        if any(term in rendered for term in stale_claude_terms):
+            fail(f"{scenario_path.name}: contains a Claude-only planning primitive")
+            failures += 1
+
+        if scenario_path.name == "visible-plan-before-edit.json":
+            if "update_plan" not in rendered or "visible Codex plan" not in rendered:
+                fail(
+                    f"{scenario_path.name}: must probe Codex update_plan semantics"
+                )
+                failures += 1
+
+        if scenario_path.name == "overlapping-implementation-stays-serial.json":
+            query = str(scenario.get("query", "")).lower()
+            expected = " ".join(scenario.get("expected_behavior", [])).lower()
+            if not all(term in query for term in ("overlap", "depend")) or "serial" not in expected:
+                fail(
+                    f"{scenario_path.name}: must probe overlapping dependent units "
+                    "remaining serial"
+                )
+                failures += 1
+
+        if scenario_path.name == "sensitive-small-diff-skip.json":
+            expected = " ".join(scenario.get("expected_behavior", [])).lower()
+            anti = " ".join(scenario.get("anti_expectation", [])).lower()
+            if not all(term in expected for term in ("always runs", "fans out")) \
+                    or "does not skip deep review" not in anti:
+                fail(
+                    f"{scenario_path.name}: must require deep review always and "
+                    "risk-based review fan-out"
+                )
+                failures += 1
+
+        if scenario_path.name == "reviewer-unavailable-fails-closed.json":
+            query = str(scenario.get("query", ""))
+            expected = " ".join(scenario.get("expected_behavior", [])).lower()
+            if "CODEX_CC_REQUIRED_REVIEW APPROVE" not in query \
+                    or not all(
+                        role in expected
+                        for role in ("owner-review", "mattpocock", "claude")
+                    ):
+                fail(
+                    f"{scenario_path.name}: must probe Codex-native owner and "
+                    "external Claude approval evidence"
+                )
+                failures += 1
+
         reference = scenario.get("tests_reference", "")
         if "#" not in reference:
             fail(f"{scenario_path.name}: tests_reference needs a heading anchor")
