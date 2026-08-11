@@ -41,6 +41,7 @@ case "$SUBCOMMAND" in
     [ -n "$MESSAGE" ] || execute_task_die "journal message required"
     [ -f "$JOURNAL" ] || execute_task_die "journal not found: $EXECUTE_TASK_RUNS_REL/$EXECUTE_TASK_RUN_ID.md"
     execute_task_assert_run_owner "$META"
+    execute_task_assert_single_link "$JOURNAL" "run journal"
     printf -- '- [%s] %s\n' "$(date -u +%FT%TZ)" "$MESSAGE" >> "$JOURNAL" \
       || execute_task_die "cannot append journal for run '$EXECUTE_TASK_RUN_ID'"
     ;;

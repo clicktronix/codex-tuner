@@ -19,6 +19,16 @@ Resolve `<plugin-root>` as two directories above this skill. Read the committed 
 `<plugin-root>/scripts/execute-task/runctl.sh` is authoritative for phases, tasks, gates, candidate,
 reviews, CI, and DoD. The Markdown journal is human audit narrative only.
 
+After Phase 0 initializes state, resolve free-form delivery paths through `runctl` instead of
+inventing paths inside the worktree. The first `prepare` persists the canonical scratch directory in
+run-owned sidecar state, so later resumes ignore ambient `TMPDIR` changes. These repository-bound
+files survive resume without joining the candidate and are removed by `finish`:
+
+```bash
+COMMIT_MESSAGE_FILE="$(bash "<plugin-root>/scripts/execute-task/runctl.sh" prepare <literal-run-id> commit-message)"
+PR_BODY_FILE="$(bash "<plugin-root>/scripts/execute-task/runctl.sh" prepare <literal-run-id> pr-body)"
+```
+
 At every phase after readiness, first resume state and enter the next phase only when the preceding
 one is complete:
 
@@ -28,6 +38,8 @@ bash "<plugin-root>/scripts/execute-task/runctl.sh" phase <literal-run-id> enter
 ```
 
 A fix transition already returns to `implementation/in_progress`; resume it without entering twice.
+`resume` never clears a block. If it reports blocked state, surface the reason and stop; only a
+separate user decision may use **Reactivating a blocked run** below.
 Pass journal, task, gate, review, and completion evidence through stdin with a quoted heredoc:
 
 ```bash
@@ -35,9 +47,12 @@ bash "<plugin-root>/scripts/execute-task/runctl.sh" task <literal-run-id> start 
 bash "<plugin-root>/scripts/execute-task/runctl.sh" task <literal-run-id> complete <literal-task-id> <<'CODEX_TUNER_TASK_EVIDENCE'
 <exact diff/check/acceptance evidence>
 CODEX_TUNER_TASK_EVIDENCE
-bash "<plugin-root>/scripts/execute-task/runctl.sh" gate <literal-run-id> record <dor|testing|acceptance|dod> pass [--sha <candidate-sha>] <<'CODEX_TUNER_GATE_EVIDENCE'
+bash "<plugin-root>/scripts/execute-task/runctl.sh" gate <literal-run-id> record <dor|planning|testing|acceptance> <pass|fail> <<'CODEX_TUNER_GATE_EVIDENCE'
 <exact command and result evidence>
 CODEX_TUNER_GATE_EVIDENCE
+bash "<plugin-root>/scripts/execute-task/runctl.sh" gate <literal-run-id> record dod <pass|fail> --sha <literal-candidate-sha> <<'CODEX_TUNER_DOD_EVIDENCE'
+<exact Definition of Done evidence>
+CODEX_TUNER_DOD_EVIDENCE
 bash "<plugin-root>/scripts/execute-task/runctl.sh" phase <literal-run-id> complete <literal-phase>
 bash "<plugin-root>/scripts/execute-task/journal.sh" append <literal-run-id> <<'CODEX_TUNER_EVIDENCE'
 <verbatim evidence with literal branch/SHA/PR/check values>
@@ -97,7 +112,10 @@ bash "<plugin-root>/scripts/execute-task/runctl.sh" task <literal-run-id> add <l
 CODEX_TUNER_TASK
 ```
 
-Complete `planning`, then apply the boundary.
+After publishing `update_plan` and adding all lifecycle tasks, record `gate ... planning pass` with
+the exact visible-plan evidence. This gate is an auditable fail-closed claim; the Codex API does not
+provide an independent attestation that `update_plan` rendered. Complete `planning`, then apply the
+boundary.
 
 ## Phase 2 — implementation
 
@@ -160,15 +178,16 @@ acceptance gate, complete the phase, and apply the boundary.
 ## Phase 5 — immutable candidate
 
 Resume and enter `candidate`. Do not change the tested tree: candidate recording rejects a tree SHA
-that differs from the testing fingerprint. Inspect status and full diff, stage explicit task paths
-only, run the artifact guard, inspect the staged diff, and commit conventionally:
+that differs from the implementation and testing fingerprints. Populate the prepared commit-message
+file as data, inspect status and full diff, stage explicit task paths only, run the artifact guard,
+inspect the staged diff, and commit conventionally:
 
 ```bash
 git add -- <path-1> <path-2>
 git diff --cached --check
 bash "<plugin-root>/scripts/execute-task/guard-artifacts.sh" <literal-run-id>
 git diff --cached
-git commit -m "<type>: <imperative summary>"
+git commit -F "$COMMIT_MESSAGE_FILE"
 ```
 
 Require a clean worktree; record full HEAD through `candidate ... record <sha>` and capture its tree
@@ -179,9 +198,10 @@ SHA. Complete `candidate`, then apply the boundary.
 Resume and enter `review`. Read the complete candidate diff and run all three layers against the same
 literal base, candidate SHA/tree, and current tracked spec:
 
-1. Perform an owner deep review across every `workflow-contract.json` review lens. All lenses always
-   run; small non-sensitive candidates may be serial, while large or sensitive candidates may fan out
-   read-only reviewer agents. Do not cap findings.
+1. Perform an owner deep review across every `workflow-contract.json` review lens. The lenses may run
+   serially only when the candidate is within both contract small-diff thresholds and touches no
+   sensitive surface; otherwise fan them out as independent read-only reviews of the same candidate.
+   Do not cap findings.
 2. Invoke `$code-review` with the fixed base and committed spec; require its Standards, Spec, and
    architecture/systemic surfaces to have no unresolved blocking finding.
 3. Invoke the machine contract with literal `base_sha`, `candidate.sha`, `candidate.tree_sha`, and
@@ -189,14 +209,23 @@ literal base, candidate SHA/tree, and current tracked spec:
    ```text
    $codex-cc-triage:claude-review --required --base <literal-base-sha> --spec <current-repo-relative-spec> --thread review-<literal-run-id> --cap 5 Review the complete candidate against the spec using unbiased correctness, architecture, systemic, security/data, and testing/operability lenses.
    ```
-   `--cap 5` bounds repair rounds, not findings. Require the exact self-verified
+   `--cap 5` bounds the whole review thread's reserved attempt claims, including the first and any
+   attempt later aborted for preflight, timeout, or tool failure; it does not cap findings and does
+   not mean five repairs. Require the exact self-verified
    `CODEX_CC_REQUIRED_REVIEW APPROVE` marker with matching thread, head, tree, base and spec. Pass it
-   verbatim as Claude approval evidence; `runctl` rejects missing, duplicated, or mismatched markers.
+   verbatim as Claude approval evidence. `runctl` resolves the single enabled
+   `codex-cc-triage@codex-cc-triage` installation and compares it with that reviewer's own
+   `review-state.sh check`; pasted, missing, duplicated, stale, or mismatched markers are rejected.
+
+   `CAP_REACHED`, divergence, timeout, or reviewer unavailability is a hard stop, never approval and
+   never a reason to retry the same required thread. Report the open findings and block the run with
+   that evidence. Only a later user decision may reset the review thread and unblock the run; never
+   reset reviewer state to escape a verdict.
 
 Validate every finding against candidate source and record it as fixed, refuted with `file:line`, or
-explicitly deferred to an issue. Invocation, timeout, partial output, reviewer cap, stale candidate, or
-`REQUEST_CHANGES` is not approval. Record `owner-review`, `mattpocock`, and `claude` verdicts with the
-exact candidate through stdin.
+explicitly deferred to an issue. Invocation, partial output, stale candidate, or `REQUEST_CHANGES` is
+not approval. Record `owner-review`, `mattpocock`, and `claude` verdicts with the exact candidate
+through stdin.
 
 ```bash
 bash "<plugin-root>/scripts/execute-task/runctl.sh" review <literal-run-id> record <owner-review|mattpocock|claude> <APPROVE|REQUEST_CHANGES> <literal-candidate-sha> <<'CODEX_TUNER_REVIEW'
@@ -206,7 +235,12 @@ CODEX_TUNER_REVIEW
 
 Any code/test change goes through `phase fix`, a new commit, and complete Phases 2–6. It invalidates
 testing, acceptance, reviews, CI, and DoD; old approval cannot move forward. Complete `review` only
-after every exact-candidate approval exists, then apply the boundary.
+after every exact-candidate approval exists, then apply the boundary. If a finding is refuted or
+deferred without changing the candidate, rerun that reviewer and record a fresh approval whose
+evidence names the finding, its `file:line` disposition or issue, and why the verdict changed; the
+earlier `REQUEST_CHANGES` remains in `review_history`. Use the enforced evidence fields
+`finding: ...`, `disposition: refuted|deferred ...`, and either `source: <path>:<line>` or
+`issue: <reference>`.
 
 ## Phase 7 — PR, current-SHA CI, and DoD
 
@@ -215,12 +249,14 @@ PR with literal base/head/title and a prepared body:
 
 ```bash
 git push -u origin <literal-branch>
-gh pr view <literal-branch> --json number,url,headRefOid,baseRefName || gh pr create --base <literal-target> --head <literal-branch> --title "<literal-title>" --body-file <prepared-body-file>
+gh pr view <literal-branch> --json number,url,headRefOid,baseRefName || gh pr create --base <literal-target> --head <literal-branch> --title "<literal-title>" --body-file "$PR_BODY_FILE"
 ```
 
 Require candidate = reviewed SHA = pushed SHA = current PR head. Observe required hosted checks on
 that SHA; missing, skipped, stale, cancelled, billing-blocked, or red is not green. Record it through
-`ci <run-id> record success <candidate-sha> --pr <literal-pr-number>` with exact evidence.
+`ci <run-id> record success <candidate-sha> --pr <literal-pr-number>` with exact evidence. The gate
+reads GitHub **required** checks: if the target branch requires none, delivery cannot prove hosted CI
+and stops until at least one required check is configured.
 
 Evaluate every pre-merge DoD item from evidence, record `dod pass --sha <candidate>`, complete delivery,
 and require `can-advance` plus `can-merge`. Show PR, SHA, reviews, CI, and DoD. HITL stops for separate
@@ -254,12 +290,27 @@ CODEX_TUNER_COMPLETION
 Switch to the literal target, pull `--ff-only`, remove only merged clean worktrees, prune, and delete
 proven-merged refs. Do not append to branch-owned state afterward and never hard-code `main`.
 
+## Reactivating a blocked run
+
+A block ends the phase loop. After the user resolves the recorded question, reactivate it separately:
+
+```bash
+bash "<plugin-root>/scripts/execute-task/runctl.sh" unblock <literal-run-id> <<'CODEX_TUNER_UNBLOCK'
+<the decision that cleared the block, and who made it>
+CODEX_TUNER_UNBLOCK
+```
+
+`runctl` journals the decision before clearing `blocked_reason`. The command cannot distinguish a
+user decision from agent-written prose, so an unattended run must report the block and stop instead
+of unblocking itself.
+
 ## Hard stops
 
 - Incomplete DoR or missing visible plan.
 - Missing/false RED, red targeted/full/static/runtime/acceptance check, or unexplained diff.
 - Any unresolved `[eyes]` criterion under `--auto`.
-- Missing, failed, partial, or stale exact-candidate review, current-SHA CI, or DoD.
+- Missing, failed, partial, stale, capped, diverged, or unavailable exact-candidate review;
+  current-SHA CI or DoD failure.
 - Scope outside the spec, deploy/publish/migration, force-push, bypass flags, broad staging, unsafe
   amend, or commit to target.
 

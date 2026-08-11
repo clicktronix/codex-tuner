@@ -3,11 +3,11 @@
 Optional stable repository defaults for `$codex-tuner:run`. Save a customized copy as
 `.codex/execute-task.md`. A committed spec wins where both provide a value.
 
-- **cheap_gate**: fast type/lint/unit command.
 - **target_test**: focused regression command for the changed behavior.
 - **full_test**: full regression command.
 - **static/build checks**: stable typecheck, lint, build, generated-artifact, or migration commands.
-- **ci**: required hosted checks and how to observe them.
+- **ci**: GitHub required checks and how to observe them; at least one must be configured on the
+  target branch.
 - **merge**: `squash` or `merge`, plus the default target branch.
 - **tracker**: `gh` or `none`.
 - **board**: project title and owner, or `none`.

@@ -12,7 +12,7 @@ RUN_STATE_SCHEMA="$ROOT/plugins/codex-tuner/schemas/run-state.schema.json"
 RELEASE_WORKFLOW="$ROOT/.github/workflows/release-please.yml"
 VALIDATE_WORKFLOW="$ROOT/.github/workflows/validate.yml"
 # Keep this value identical to cc-tuner and update it only in coordinated contract PRs.
-EXPECTED_SHARED_CONTRACT_SHA256="5d1a50de037c5f2f850869a0ea1b86932b702d83452995e8a5e3f8f27abdb4e5"
+EXPECTED_SHARED_CONTRACT_SHA256="7a4fdb14d2b4ff94b3701f2e0eb344f5333e9a460e5bf8942205847c30216906"
 failures=0
 
 need() {
@@ -86,10 +86,11 @@ assert d["sensitive_surfaces"] == [
     "security-relevant input handling: injection, SSRF, path traversal, unsafe deserialization, and server-side allowlists",
 ]
 ids = [item["id"] for item in d["invariants"]]
-assert len(ids) == len(set(ids)) == 24
+assert len(ids) == len(set(ids)) == 25
 assert "structured-run-state" in ids
 assert "visible-plan-before-mutation" in ids
 assert "immutable-candidate-before-review" in ids
+assert "reviewer-hard-stop-is-not-approval" in ids
 assert "changes-invalidate-downstream-evidence" in ids
 assert "definition-of-done-before-merge" in ids
 assert "post-merge-reconciliation-only" in ids
@@ -103,6 +104,7 @@ need "spec-grilling" 'Invoke `$grilling` before drafting.' "$SPEC"
 need "spec-domain-modeling" 'Invoke `$domain-modeling` when the task changes domain vocabulary' "$SPEC"
 need "matt-codex-install" 'npx skills@latest add mattpocock/skills --global --agent codex --skill grilling domain-modeling code-review --yes' "$README"
 need "matt-codex-install-hint" 'npx skills@latest add mattpocock/skills --global --agent codex --skill grilling domain-modeling code-review --yes' "$PREREQ"
+need "prereq-jq" 'MISSING: jq (required by codex-tuner run state and plugin discovery)' "$PREREQ"
 need "run-loads-contract" '`workflow-contract.json`' "$RUN"
 need "run-loads-tiering-reference" '`references/tiering.md`' "$RUN"
 need "run-structured-state" 'runctl.sh` is authoritative' "$RUN"
@@ -118,8 +120,16 @@ need "run-claude-review" '$codex-cc-triage:claude-review --required --base <lite
 need "run-claude-marker" 'CODEX_CC_REQUIRED_REVIEW APPROVE' "$RUN"
 need "run-matt-review" 'Invoke `$code-review` with the fixed base' "$RUN"
 need "run-visible-plan" '`update_plan` with:' "$RUN"
+need "run-plan-evidence-gate" 'record `gate ... planning pass`' "$RUN"
 need "run-implementation-only-parallel" 'Parallelize only independent code-writing units' "$RUN"
 need "run-testing-phase" '## Phase 3 — Testing & Code Verification' "$RUN"
+need "run-prepared-commit-file" 'prepare <literal-run-id> commit-message' "$RUN"
+need "run-prepared-pr-file" 'prepare <literal-run-id> pr-body' "$RUN"
+need "run-authoritative-claude-state" '`review-state.sh check`' "$RUN"
+need "run-review-cap-semantics" "reserved attempt claims" "$RUN"
+need "run-review-hard-stop" '`CAP_REACHED`, divergence, timeout, or reviewer unavailability is a hard stop' "$RUN"
+need "run-block-reactivation" '## Reactivating a blocked run' "$RUN"
+need "run-required-check-configuration" 'if the target branch requires none, delivery cannot prove hosted CI' "$RUN"
 need "run-atomic-merge-head" '--match-head-commit <literal-candidate-sha>' "$RUN"
 need "release-pr-status" 'context=release-pr/validate' "$RELEASE_WORKFLOW"
 need "release-pr-exact-sha" 'ref: ${{ steps.release-pr.outputs.sha }}' "$RELEASE_WORKFLOW"
@@ -151,7 +161,7 @@ phase_count="$(grep -cE '^## Phase [0-8] —' "$RUN")"
 [ "$phase_count" -eq 9 ] && echo "PASS phase-count" \
   || { echo "FAIL phase-count (got $phase_count, want 9)"; failures=1; }
 
-if grep -En 'glab|effort_tiering|small_diff_budget|assets/tiering|≤50 changed lines|≤5 files' "$SPEC" "$RUN" "$CONFIG" >/dev/null; then
+if grep -En 'glab|effort_tiering|small_diff_budget|cheap_gate|assets/tiering|≤50 changed lines|≤5 files' "$SPEC" "$RUN" "$CONFIG" >/dev/null; then
   echo "FAIL ignored-or-duplicated-policy"
   failures=1
 else
@@ -173,7 +183,7 @@ s = Path(sys.argv[1]).read_text(encoding="utf-8")
 needles = [
     "git add -- <path-1> <path-2>",
     "guard-artifacts.sh",
-    "git commit -m",
+    'git commit -F "$COMMIT_MESSAGE_FILE"',
     "## Phase 6 — exact-candidate review",
     "git push -u origin",
     "gh pr view <literal-branch>",

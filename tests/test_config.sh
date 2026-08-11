@@ -10,7 +10,8 @@ REPO="$(mktemp -d)" || exit 1
 
 EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPT" "$TEMPLATE" >/dev/null 2>&1
 rc=$?
-if [ "$rc" -eq 2 ] && grep -q 'cheap_gate' "$REPO/.codex/execute-task.md" \
+if [ "$rc" -eq 2 ] && grep -q 'target_test' "$REPO/.codex/execute-task.md" \
+  && ! grep -q 'cheap_gate' "$REPO/.codex/execute-task.md" \
   && ! find "$REPO/.codex" -name '.execute-task.*' -print -quit | grep -q .; then
   echo "PASS config-created"
 else

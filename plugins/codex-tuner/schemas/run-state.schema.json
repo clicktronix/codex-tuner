@@ -166,7 +166,7 @@
     },
     "completed_at": { "$ref": "#/$defs/nullableTimestamp" },
     "completion_evidence": { "type": ["string", "null"] },
-    "fix_round": { "type": "integer", "minimum": 0 },
+    "fix_round": { "type": "integer", "minimum": 0, "maximum": 999999 },
     "invalidations": {
       "type": "array",
       "items": {
@@ -226,7 +226,7 @@
     "task": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "phase", "description", "status", "ui_task_id", "evidence", "updated_at"],
+      "required": ["id", "phase", "description", "status", "evidence", "updated_at"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "phase": {
@@ -234,7 +234,6 @@
         },
         "description": { "type": "string", "minLength": 1 },
         "status": { "enum": ["pending", "in_progress", "blocked", "completed"] },
-        "ui_task_id": { "type": ["string", "null"] },
         "evidence": { "type": ["string", "null"] },
         "updated_at": { "$ref": "#/$defs/timestamp" }
       }

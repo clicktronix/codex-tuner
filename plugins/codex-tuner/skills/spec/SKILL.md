@@ -120,8 +120,7 @@ branch: <current task branch>
 target: <integration branch>
 merge: squash|merge
 auto_ready: yes|no — <reason when no>
-ci: <exact command or check source>
-cheap_gate: <exact command>
+ci: <GitHub required checks and exact observation command>
 target_test: <exact command>
 full_test: <exact command>
 tracker: gh|none
@@ -131,7 +130,8 @@ board: <project title + owner | none>
 For documentation-only or mechanical work, `First failing check` and `Negative/mutation proof` may say
 `not applicable` only with a concrete reason and alternative baseline/diff check.
 
-Set `auto_ready: yes` only for one PR with complete DoR, nonblank `ci`, `target_test`, and `full_test`,
+Set `auto_ready: yes` only for one PR with complete DoR, at least one GitHub required check on the
+target branch, nonblank `ci`, `target_test`, and `full_test`,
 and a machine replacement or waiver for every `[eyes]` item. Only explicit
 `$codex-tuner:run --auto <spec>` requests unattended execution.
 

@@ -7,6 +7,32 @@ R="$DIR/runctl.sh"
 RUNS_REL=".agent-state/codex-tuner/execute-task-runs"
 fails=0
 
+TEST_TOOLS="$(mktemp -d)" || exit 1
+TEST_TOOLS="$(CDPATH='' cd -- "$TEST_TOOLS" && pwd -P)" || exit 1
+REVIEWER_ROOT="$TEST_TOOLS/codex-cc-triage"
+MARKER_FILE="$TEST_TOOLS/authoritative-marker"
+mkdir -p "$REVIEWER_ROOT/skills/claude-review" "$REVIEWER_ROOT/scripts"
+printf '%s\n' '--required CODEX_CC_REQUIRED_REVIEW APPROVE' > "$REVIEWER_ROOT/skills/claude-review/SKILL.md"
+cat > "$REVIEWER_ROOT/scripts/review-state.sh" <<'REVIEW_STATE_STUB'
+#!/usr/bin/env bash
+# Emits CODEX_CC_REQUIRED_REVIEW APPROVE only from this authoritative state stub.
+[ -z "${CODEX_CC_TRIAGE_STATE_DIR:-}" ] || exit 9
+[ -z "${CODEX_CC_TRIAGE_PYTHON_BIN:-}" ] || exit 9
+[ "$1" = check ] && [ "$2" = review-run-1 ] && cat "$CODEX_TEST_MARKER_FILE"
+REVIEW_STATE_STUB
+chmod +x "$REVIEWER_ROOT/scripts/review-state.sh"
+cat > "$TEST_TOOLS/codex" <<'CODEX_STUB'
+#!/usr/bin/env bash
+[ "$1:$2:$3" = "plugin:list:--json" ] || exit 1
+jq -n --arg root "$CODEX_TEST_REVIEWER_ROOT" '{installed:[{
+  pluginId:"codex-cc-triage@codex-cc-triage", installed:true, enabled:true,
+  source:{source:"local",path:$root}
+}]}'
+CODEX_STUB
+chmod +x "$TEST_TOOLS/codex"
+export CODEX_TEST_REVIEWER_ROOT="$REVIEWER_ROOT" CODEX_TEST_MARKER_FILE="$MARKER_FILE"
+PATH="$TEST_TOOLS:$PATH"
+
 pass() { printf 'PASS %s\n' "$1"; }
 fail() { printf 'FAIL %s%s\n' "$1" "${2:+ ($2)}"; fails=1; }
 runctl() { EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$R" "$@"; }
@@ -47,6 +73,8 @@ create_plan() {
       task run-1 add review-candidate review >/dev/null \
     && evidence "Publish, verify CI and DoD, then reconcile" \
       task run-1 add deliver-candidate delivery >/dev/null \
+    && evidence "update_plan published every lifecycle item with one in progress" \
+      gate run-1 record planning pass >/dev/null \
     && runctl phase run-1 complete planning >/dev/null \
     && runctl phase run-1 enter implementation >/dev/null
 }
@@ -90,6 +118,7 @@ approve_all() {
     evidence "$reviewer approved exact candidate" \
       review run-1 record "$reviewer" APPROVE "$SHA" >/dev/null || return 1
   done
+  claude_stub_agrees
   evidence "$(claude_approval_marker)" \
     review run-1 record claude APPROVE "$SHA" >/dev/null \
     && runctl task run-1 start review-candidate >/dev/null \
@@ -104,13 +133,22 @@ claude_approval_marker() {
   base="$(jq -r '.base_sha' "$state")"
   spec="$(jq -r '.spec' "$state")"
   printf 'CODEX_CC_REQUIRED_REVIEW APPROVE thread=review-run-1 head=%s tree=%s fingerprint=%064d base_sha=%s spec_path=%s\n' \
-    "$sha" "$tree" 0 "$base" "$spec"
+    "$sha" "$tree" 1 "$base" "$spec"
+}
+
+claude_stub_agrees() {
+  claude_approval_marker > "$MARKER_FILE"
 }
 
 prepare_candidate() {
-  complete_readiness && create_plan && complete_implementation || return 1
+  complete_readiness && create_plan || return 1
+  runctl task run-1 start implement-feature >/dev/null || return 1
   printf 'implementation\n' >> "$REPO/file.txt"
   (cd "$REPO" && git add file.txt && git commit -qm implementation) || return 1
+  evidence "Implementation and scoped test completed" \
+    task run-1 complete implement-feature >/dev/null || return 1
+  runctl phase run-1 complete implementation >/dev/null \
+    && runctl phase run-1 enter testing >/dev/null || return 1
   complete_testing_to_candidate && record_candidate_and_enter_review
 }
 
@@ -175,7 +213,7 @@ runctl status run-1 >/dev/null 2>&1; rc=$?
   || fail "cross-branch-state-rejected" "rc=$rc"
 (cd "$REPO" && git switch -q task) >/dev/null 2>&1
 
-# Explicit block/resume is the only non-terminal Stop escape for an auto run.
+# Explicit block/unblock is the only non-terminal hard-stop escape for an auto run.
 evidence "waiting for a user-owned migration" block run-1 >/dev/null
 EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$P" run-2 main --expected-branch task >/dev/null || exit 1
 runctl init run-2 --mode auto --spec docs/spec.md >/dev/null || exit 1
@@ -183,9 +221,37 @@ runctl resume run-1 >/dev/null 2>&1; rc=$?
 [ "$rc" -eq 1 ] && pass "resume-cannot-duplicate-active-owner" \
   || fail "resume-cannot-duplicate-active-owner" "rc=$rc"
 evidence "release branch ownership" block run-2 >/dev/null
-[ "$(jq -r '.status' "$STATE")" = "blocked" ] && runctl resume run-1 >/dev/null \
-  && [ "$(jq -r '.status' "$STATE")" = "active" ] \
-  && pass "block-resume-owned-state" || fail "block-resume-owned-state"
+[ "$(jq -r '.status' "$STATE")" = "blocked" ]
+OUT="$(runctl resume run-1 2>&1)"; rc=$?
+{ [ "$rc" -eq 1 ] && printf '%s' "$OUT" | grep -q "runctl.sh unblock" \
+    && [ "$(jq -r '.status' "$STATE")" = "blocked" ]; } \
+  && pass "resume-does-not-clear-a-block" || fail "resume-does-not-clear-a-block" "rc=$rc out=$OUT"
+runctl unblock run-1 < /dev/null >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && pass "unblock-requires-a-recorded-decision" \
+  || fail "unblock-requires-a-recorded-decision" "rc=$rc"
+evidence "user resolved the migration" unblock run-1 >/dev/null 2>&1; rc=$?
+if [ "$rc" -eq 0 ] && [ "$(jq -r '.status' "$STATE")" = "active" ] \
+    && grep -q 'decision: user resolved the migration' "$REPO/$RUNS_REL/run-1.md"; then
+  pass "block-unblock-owned-state"
+else
+  fail "block-unblock-owned-state" "rc=$rc"
+fi
+
+complete_readiness && create_plan || exit 1
+FIFO="$REPO/blocking-stdin"
+mkfifo "$FIFO" || exit 1
+( exec 9>"$FIFO"; sleep 30 ) & fifo_holder=$!
+( runctl task run-1 complete implement-feature < "$FIFO" >/dev/null 2>&1 ) & blocked_writer=$!
+sleep 1
+( runctl task run-1 start implement-feature >"$REPO/probe.out" 2>&1; printf '%s\n' "$?" > "$REPO/probe.rc" ) &
+probe=$!
+waited=0
+while [ ! -f "$REPO/probe.rc" ] && [ "$waited" -lt 20 ]; do sleep 0.5; waited=$((waited + 1)); done
+kill "$probe" "$fifo_holder" "$blocked_writer" 2>/dev/null
+wait "$probe" "$fifo_holder" "$blocked_writer" 2>/dev/null
+rc="$(cat "$REPO/probe.rc" 2>/dev/null || printf 'still-blocked')"
+[ "$rc" = "0" ] && pass "blocked-stdin-does-not-hold-the-state-lock" \
+  || fail "blocked-stdin-does-not-hold-the-state-lock" "rc=$rc"
 rm -rf "$REPO"
 
 # Concurrent initialization is serialized across run IDs, so exactly one state can become active.
@@ -211,6 +277,37 @@ else
   fail "concurrent-init-allows-one-active-run" "rc_a=$rc_a rc_b=$rc_b"
 fi
 rm -rf "$REPO"
+
+# Stale-lock replacement is generation-safe under contention.
+lock_race_ok=1
+lock_race_trial=1
+while [ "$lock_race_trial" -le 5 ]; do
+  REPO="$(mktemp -d)" || exit 1
+  RESULTS="$(mktemp -d)" || exit 1
+  (
+    cd "$REPO" && git init -q -b main && git config user.email test@example.com \
+      && git config user.name test && mkdir -p docs && printf 'base\n' > file.txt \
+      && printf '# Spec\n' > docs/spec.md && git add file.txt docs/spec.md \
+      && git commit -qm init && git switch -qc task
+  ) || exit 1
+  for n in 1 2 3 4 5 6 7 8; do
+    EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$P" "race-$n" main --expected-branch task >/dev/null || exit 1
+  done
+  mkdir "$REPO/$RUNS_REL/.init.lock"
+  printf '999999999999\n' > "$REPO/$RUNS_REL/.init.lock/pid"
+  for n in 1 2 3 4 5 6 7 8; do
+    (runctl init "race-$n" --mode auto --spec docs/spec.md >/dev/null 2>&1; printf '%s\n' "$?" > "$RESULTS/$n") &
+  done
+  wait
+  successes="$(awk '$1 == 0 { total++ } END { print total + 0 }' "$RESULTS"/*)"
+  active="$(find "$REPO/$RUNS_REL" -type f -name '*.state.json' | wc -l | tr -d ' ')"
+  if [ "$successes" -ne 1 ] || [ "$active" -ne 1 ]; then lock_race_ok=0; break; fi
+  rm -rf "$REPO" "$RESULTS"
+  lock_race_trial=$((lock_race_trial + 1))
+done
+[ "$lock_race_ok" -eq 1 ] && pass "stale-init-lock-contention-is-serialized" \
+  || fail "stale-init-lock-contention-is-serialized" "trial=$lock_race_trial successes=$successes active=$active"
+[ "$lock_race_ok" -eq 1 ] || rm -rf "$REPO" "$RESULTS"
 
 # Specs move from the planning area to the archive while implementation owns mutations. State
 # follows only a staged/committed relocation; a copy that leaves the old tracked path cannot pass.
@@ -247,6 +344,82 @@ else
 fi
 rm -rf "$REPO"
 
+# Prepared commit/PR text is repository-bound, outside the candidate, and link-safe.
+make_repo
+PREPARED="$(runctl prepare run-1 commit-message)"; rc=$?
+{ [ "$rc" -eq 0 ] && [ -f "$PREPARED" ]; } && pass "prepare-returns-a-usable-path" \
+  || fail "prepare-returns-a-usable-path" "rc=$rc path=$PREPARED"
+REPO_REAL_PREP="$(cd "$REPO" && pwd -P)"
+case "$PREPARED" in
+  "$REPO_REAL_PREP"/*) fail "prepared-file-is-outside-the-repository" "$PREPARED" ;;
+  /*) pass "prepared-file-is-outside-the-repository" ;;
+  *) fail "prepared-file-is-outside-the-repository" "not absolute: $PREPARED" ;;
+esac
+printf 'subject\n' > "$PREPARED"
+[ "$(runctl prepare run-1 commit-message)" = "$PREPARED" ] \
+  && [ "$(cat "$PREPARED")" = subject ] \
+  && pass "prepare-is-stable-without-truncation" || fail "prepare-is-stable-without-truncation"
+ALTERNATE_TMP="$TEST_TOOLS/alternate-tmp"
+mkdir -p "$ALTERNATE_TMP"
+if [ "$(TMPDIR="$ALTERNATE_TMP" runctl prepare run-1 commit-message)" = "$PREPARED" ] \
+    && [ "$(cat "$PREPARED")" = subject ]; then
+  pass "prepared-path-survives-a-changed-tmpdir"
+else
+  fail "prepared-path-survives-a-changed-tmpdir"
+fi
+runctl prepare run-1 arbitrary-note >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && pass "prepare-allows-only-owned-workflow-files" \
+  || fail "prepare-allows-only-owned-workflow-files" "rc=$rc"
+PREPARED_DIR="$(dirname "$PREPARED")"
+PREPARED_VICTIM="$PREPARED_DIR/hardlink-victim"
+printf 'unchanged\n' > "$PREPARED_VICTIM"
+FILE_BEFORE="$(cat "$PREPARED_VICTIM")"
+ln "$PREPARED_VICTIM" "$PREPARED_DIR/pr-body" 2>/dev/null
+runctl prepare run-1 pr-body >/dev/null 2>&1; rc=$?
+if [ -e "$PREPARED_DIR/pr-body" ]; then
+  { [ "$rc" -eq 1 ] && [ "$(cat "$PREPARED_VICTIM")" = "$FILE_BEFORE" ]; } \
+    && pass "prepare-refuses-a-hard-linked-destination" \
+    || fail "prepare-refuses-a-hard-linked-destination" "rc=$rc"
+  rm -f "$PREPARED_DIR/pr-body" "$PREPARED_VICTIM"
+else
+  fail "prepare-refuses-a-hard-linked-destination" "fixture missing"
+  rm -f "$PREPARED_VICTIM"
+fi
+IN_REPO_TMP="$REPO/in-repo-tmp"
+mkdir -p "$IN_REPO_TMP"
+IN_REPO_PREPARED="$(TMPDIR="$IN_REPO_TMP" runctl prepare run-1 pr-body 2>/dev/null)"; rc=$?
+if [ "$rc" -eq 0 ] && [ "$IN_REPO_PREPARED" = "$PREPARED_DIR/pr-body" ] \
+    && [ -z "$(find "$IN_REPO_TMP" -mindepth 1 -print -quit)" ]; then
+  pass "stored-prepared-path-ignores-a-later-in-repo-tmpdir"
+else
+  fail "stored-prepared-path-ignores-a-later-in-repo-tmpdir" "rc=$rc path=$IN_REPO_PREPARED"
+fi
+
+FIRST_REPO="$REPO"
+SECOND_REPO="$(mktemp -d)" || exit 1
+(
+  cd "$SECOND_REPO" && git init -q -b main && git config user.email test@example.com \
+    && git config user.name test && mkdir -p docs && printf 'other\n' > file.txt \
+    && printf '# Spec\n' > docs/spec.md && git add file.txt docs/spec.md \
+    && git commit -qm init && git switch -qc task
+) || exit 1
+EXECUTE_TASK_PROJECT_DIR="$SECOND_REPO" bash "$P" run-1 main --expected-branch task >/dev/null || exit 1
+EXECUTE_TASK_PROJECT_DIR="$SECOND_REPO" bash "$R" init run-1 --mode auto --spec docs/spec.md >/dev/null || exit 1
+SECOND_PREPARED="$(EXECUTE_TASK_PROJECT_DIR="$SECOND_REPO" bash "$R" prepare run-1 commit-message)"
+[ "$SECOND_PREPARED" != "$PREPARED" ] && pass "prepared-path-is-repository-bound" \
+  || fail "prepared-path-is-repository-bound" "$SECOND_PREPARED"
+rm -f "$SECOND_PREPARED"
+rmdir "$(dirname "$SECOND_PREPARED")" 2>/dev/null || true
+rm -rf "$SECOND_REPO"
+REPO="$FIRST_REPO"
+evidence "stop here" block run-1 >/dev/null
+runctl prepare run-1 commit-message >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && pass "prepare-refuses-a-blocked-run" \
+  || fail "prepare-refuses-a-blocked-run" "rc=$rc"
+rm -f "$PREPARED" "$PREPARED_DIR/pr-body"
+rmdir "$PREPARED_DIR" 2>/dev/null || true
+rm -rf "$REPO"
+
 # A candidate cannot pass review without every required exact-SHA verdict.
 make_repo
 prepare_candidate || { fail "candidate-fixture"; rm -rf "$REPO"; exit "$fails"; }
@@ -268,7 +441,18 @@ bad_marker="$(claude_approval_marker | sed 's/fingerprint=/digest=/')"
 evidence "$bad_marker" review run-1 record claude APPROVE "$SHA" >/dev/null 2>&1; rc=$?
 [ "$rc" -eq 1 ] && pass "claude-approval-requires-fingerprint-label" \
   || fail "claude-approval-requires-fingerprint-label" "rc=$rc"
-evidence "$(claude_approval_marker)" review run-1 record claude APPROVE "$SHA" >/dev/null
+zero_marker="$(claude_approval_marker | sed 's/fingerprint=[0-9a-f]*/fingerprint=0000000000000000000000000000000000000000000000000000000000000000/')"
+printf '%s\n' "$(claude_approval_marker)" > "$MARKER_FILE"
+evidence "$zero_marker" review run-1 record claude APPROVE "$SHA" >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && pass "hand-written-zero-fingerprint-is-not-authority" \
+  || fail "hand-written-zero-fingerprint-is-not-authority" "rc=$rc"
+claude_stub_agrees
+export CODEX_CC_TRIAGE_STATE_DIR="$TEST_TOOLS/forged-state"
+export CODEX_CC_TRIAGE_PYTHON_BIN="$TEST_TOOLS/forged-python"
+evidence "$(claude_approval_marker)" review run-1 record claude APPROVE "$SHA" >/dev/null 2>&1; rc=$?
+unset CODEX_CC_TRIAGE_STATE_DIR CODEX_CC_TRIAGE_PYTHON_BIN
+[ "$rc" -eq 0 ] && pass "ambient-reviewer-overrides-are-stripped" \
+  || fail "ambient-reviewer-overrides-are-stripped" "rc=$rc"
 printf 'post-review mutation\n' >> "$REPO/file.txt"
 runctl can-advance run-1 >/dev/null 2>&1; rc=$?
 [ "$rc" -eq 1 ] && pass "dirty-tree-invalidates-review" \
@@ -285,6 +469,7 @@ prepare_candidate || { fail "request-changes-fixture"; rm -rf "$REPO"; exit "$fa
 SHA="$(git -C "$REPO" rev-parse HEAD)"
 evidence "owner review requested changes" review run-1 record owner-review REQUEST_CHANGES "$SHA" >/dev/null
 evidence "matt approved" review run-1 record mattpocock APPROVE "$SHA" >/dev/null
+claude_stub_agrees
 evidence "$(claude_approval_marker)" review run-1 record claude APPROVE "$SHA" >/dev/null
 runctl task run-1 start review-candidate >/dev/null
 evidence "review attempt completed with blocking verdict" \
@@ -292,25 +477,60 @@ evidence "review attempt completed with blocking verdict" \
 runctl phase run-1 complete review >/dev/null 2>&1; rc=$?
 [ "$rc" -eq 1 ] && pass "request-changes-blocks-review" \
   || fail "request-changes-blocks-review" "rc=$rc"
-evidence "same candidate reconsidered" review run-1 record owner-review APPROVE "$SHA" >/dev/null 2>&1; rc=$?
-[ "$rc" -eq 1 ] && pass "request-changes-cannot-be-overwritten" \
-  || fail "request-changes-cannot-be-overwritten" "rc=$rc"
-evidence "address deep review findings" phase run-1 fix >/dev/null
-if jq -e '.phase == {name:"implementation",status:"in_progress"} and
-    .candidate.sha == null and all(.reviews[]; .verdict == "PENDING") and .ci.status == "pending" and
-    any(.tasks[]; .id == "review-candidate" and .status == "pending" and .evidence == null)' \
-    "$REPO/$RUNS_REL/run-1.state.json" >/dev/null; then
-  pass "review-fix-invalidates-downstream"
+evidence "fresh approval without a disposition" \
+  review run-1 record owner-review APPROVE "$SHA" >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && pass "same-candidate-approval-requires-a-disposition" \
+  || fail "same-candidate-approval-requires-a-disposition" "rc=$rc"
+evidence "finding: owner-review-1
+disposition: refuted because the invariant already holds
+source: file.txt:1" \
+  review run-1 record owner-review APPROVE "$SHA" >/dev/null 2>&1; rc=$?
+if [ "$rc" -eq 0 ] && jq -e --arg sha "$SHA" '
+    [.review_history[] | select(.reviewer == "owner-review" and .sha == $sha) | .verdict] ==
+      ["REQUEST_CHANGES", "APPROVE"]
+  ' "$REPO/$RUNS_REL/run-1.state.json" >/dev/null; then
+  pass "same-candidate-disposition-allows-fresh-approval"
 else
-  fail "review-fix-invalidates-downstream"
+  fail "same-candidate-disposition-allows-fresh-approval" "rc=$rc"
 fi
 rm -rf "$REPO"
 
-# Candidate content must be exactly the content that passed testing, even though the test gate can
-# be recorded before the candidate commit exists.
+# An implementation snapshot failure must not advance the phase.
+make_repo
+complete_readiness && create_plan || exit 1
+runctl task run-1 start implement-feature >/dev/null
+evidence "Implementation completed before snapshot" \
+  task run-1 complete implement-feature >/dev/null
+MISSING_TMP="$REPO/does-not-exist"
+TMPDIR="$MISSING_TMP" runctl phase run-1 complete implementation >/dev/null 2>&1; rc=$?
+if [ "$rc" -eq 1 ] \
+    && jq -e '.phase == {name:"implementation",status:"in_progress"} and
+      all(.gates[]; .id != "implementation-tree")' \
+      "$REPO/$RUNS_REL/run-1.state.json" >/dev/null; then
+  pass "implementation-snapshot-failure-does-not-complete-phase"
+else
+  fail "implementation-snapshot-failure-does-not-complete-phase" "rc=$rc"
+fi
+rm -rf "$REPO"
+
+# Testing cannot absorb a mutation made after implementation closed.
 make_repo
 complete_readiness && create_plan && complete_implementation || exit 1
+printf 'mutation during testing\n' >> "$REPO/file.txt"
+OUT="$(evidence "tests passed after an illicit edit" gate run-1 record testing pass 2>&1)"; rc=$?
+[ "$rc" -eq 1 ] && pass "testing-cannot-absorb-a-mutation" \
+  || fail "testing-cannot-absorb-a-mutation" "rc=$rc out=$OUT"
+rm -rf "$REPO"
+
+# Candidate content must still be exactly the tested content.
+make_repo
+complete_readiness && create_plan || exit 1
+runctl task run-1 start implement-feature >/dev/null
 printf 'tested implementation\n' >> "$REPO/file.txt"
+(cd "$REPO" && git add file.txt && git commit -qm tested-implementation) >/dev/null 2>&1
+evidence "implementation completed" task run-1 complete implement-feature >/dev/null
+runctl phase run-1 complete implementation >/dev/null
+runctl phase run-1 enter testing >/dev/null
 evidence "tests passed on this worktree" gate run-1 record testing pass >/dev/null
 runctl task run-1 start verify-tests >/dev/null
 evidence "testing task completed" task run-1 complete verify-tests >/dev/null
@@ -347,6 +567,26 @@ else
 fi
 rm -rf "$REPO"
 
+# Runtime validation agrees with the published bounded/unique schema rules.
+make_repo
+complete_readiness && create_plan && complete_implementation || exit 1
+STATE="$REPO/$RUNS_REL/run-1.state.json"
+jq '.fix_round = 999999' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+evidence "one more fix" phase run-1 fix >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && [ "$(jq -r '.fix_round' "$STATE")" -eq 999999 ] \
+  && pass "fix-loop-limit-rejected-before-arithmetic" \
+  || fail "fix-loop-limit-rejected-before-arithmetic" "rc=$rc"
+jq '.fix_round = 1000000' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+runctl status run-1 >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && pass "out-of-range-fix-counter-invalidates-state" \
+  || fail "out-of-range-fix-counter-invalidates-state" "rc=$rc"
+jq '.fix_round = 0 | .completed_phases = ["readiness","planning","readiness"]' "$STATE" \
+  > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+runctl status run-1 >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && pass "duplicate-completed-phase-invalidates-state" \
+  || fail "duplicate-completed-phase-invalidates-state" "rc=$rc"
+rm -rf "$REPO"
+
 # Delivery accepts CI and DoD only for the immutable reviewed candidate.
 make_repo
 prepare_candidate && approve_all \
@@ -374,6 +614,8 @@ make_repo
 prepare_candidate && approve_all \
   && runctl phase run-1 complete review >/dev/null \
   && runctl phase run-1 enter delivery >/dev/null || exit 1
+FINAL_PREPARED="$(runctl prepare run-1 pr-body)" || exit 1
+printf 'pull request body\n' > "$FINAL_PREPARED"
 SHA="$(git -C "$REPO" rev-parse HEAD)"
 WRONG_SHA="$(git -C "$REPO" rev-parse main)"
 
@@ -382,7 +624,13 @@ cat > "$GH_STUB/gh" <<'GH_STUB_SCRIPT'
 #!/usr/bin/env bash
 case "$1:$2" in
   pr:view) printf '{"number":42,"state":"%s","headRefOid":"%s","baseRefName":"main","mergeCommit":{"oid":"merge-sha"}}\n' "${GH_TEST_PR_STATE:-OPEN}" "$GH_TEST_SHA" ;;
-  pr:checks) printf '%s\n' "$GH_TEST_CHECKS" ;;
+  pr:checks)
+    if [ "$GH_TEST_CHECKS" = none ]; then
+      echo "no checks reported on the 'task' branch" >&2
+      exit 1
+    fi
+    printf '%s\n' "$GH_TEST_CHECKS"
+    ;;
   *) exit 1 ;;
 esac
 GH_STUB_SCRIPT
@@ -394,10 +642,11 @@ evidence "checks passed on stale PR head" ci run-1 record success "$SHA" --pr 42
 [ "$rc" -eq 1 ] && pass "stale-pr-head-not-green" \
   || fail "stale-pr-head-not-green" "rc=$rc"
 export GH_TEST_SHA="$SHA"
-export GH_TEST_CHECKS='[]'
-evidence "no required checks" ci run-1 record success "$SHA" --pr 42 >/dev/null 2>&1; rc=$?
-[ "$rc" -eq 1 ] && pass "absent-required-checks-not-green" \
-  || fail "absent-required-checks-not-green" "rc=$rc"
+export GH_TEST_CHECKS='none'
+OUT="$(evidence "no required checks" ci run-1 record success "$SHA" --pr 42 2>&1)"; rc=$?
+{ [ "$rc" -eq 1 ] && printf '%s' "$OUT" | grep -q 'no required checks configured on GitHub'; } \
+  && pass "absent-required-checks-names-configuration-gap" \
+  || fail "absent-required-checks-names-configuration-gap" "rc=$rc out=$OUT"
 export GH_TEST_CHECKS='[{"bucket":"pass","name":"test","state":"SUCCESS"}]'
 evidence "required checks passed" ci run-1 record success "$SHA" --pr 42 >/dev/null
 [ "$(jq -r '.ci.pr_number' "$REPO/$RUNS_REL/run-1.state.json")" = "42" ] \
@@ -431,11 +680,19 @@ evidence "premature completion claim" finish run-1 >/dev/null 2>&1; rc=$?
 [ "$rc" -eq 1 ] && pass "finish-requires-merged-pr" \
   || fail "finish-requires-merged-pr" "rc=$rc"
 export GH_TEST_PR_STATE="MERGED"
-evidence "PR merged; issue/spec/branch reconciled" finish run-1 >/dev/null
+FINISH_TMP="$TEST_TOOLS/finish-tmp"
+mkdir -p "$FINISH_TMP"
+TMPDIR="$FINISH_TMP" evidence "PR merged; issue/spec/branch reconciled" finish run-1 >/dev/null
 [ "$(jq -r '.status + ":" + .phase.name' "$REPO/$RUNS_REL/run-1.state.json")" = "completed:done" ] \
   && [ "$(jq -r '.completion_evidence' "$REPO/$RUNS_REL/run-1.state.json")" = "PR merged; issue/spec/branch reconciled" ] \
   && pass "finish-marks-terminal" || fail "finish-marks-terminal"
+[ ! -e "$FINAL_PREPARED" ] && pass "finish-removes-prepared-files" \
+  || fail "finish-removes-prepared-files" "$FINAL_PREPARED"
+[ ! -e "$REPO/$RUNS_REL/run-1.prepared-dir" ] \
+  && pass "finish-removes-prepared-path-state" \
+  || fail "finish-removes-prepared-path-state"
 rm -rf "$GH_STUB"
 rm -rf "$REPO"
+rm -rf "$TEST_TOOLS"
 
 exit "$fails"

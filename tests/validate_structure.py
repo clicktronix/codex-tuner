@@ -477,7 +477,7 @@ def validate(root: Path) -> list[str]:
         if not asset.is_file():
             errors.append(f"missing asset: {asset.relative_to(root)}")
 
-    if contract.get("version") != "2.0.0" or len(contract.get("invariants", [])) != 24:
+    if contract.get("version") != "2.0.0" or len(contract.get("invariants", [])) != 25:
         errors.append("workflow contract mismatch")
     if release_manifest.get(".") != version:
         errors.append("release manifest version mismatch")

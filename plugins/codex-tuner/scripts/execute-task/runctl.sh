@@ -19,26 +19,30 @@ usage: runctl.sh init <run-id> [--mode interactive|auto] [--spec <path>]
        runctl.sh phase <run-id> enter <phase>
        runctl.sh phase <run-id> complete [<phase>]
        runctl.sh phase <run-id> fix < reason.txt
-       runctl.sh task <run-id> add <task-id> <phase> [--ui-task-id <id>] < description.txt
+       runctl.sh task <run-id> add <task-id> <phase> < description.txt
        runctl.sh task <run-id> start|complete|block <task-id> [< evidence.txt]
-       runctl.sh task <run-id> bind-ui <task-id> <ui-task-id>
        runctl.sh gate <run-id> record <gate-id> pass|fail [--sha <commit>] < evidence.txt
+       runctl.sh prepare <run-id> commit-message|pr-body
        runctl.sh candidate <run-id> record <commit>
        runctl.sh review <run-id> record <reviewer> APPROVE|REQUEST_CHANGES <commit> < evidence.txt
        runctl.sh ci <run-id> record success|failure <commit> [--pr <number>] < evidence.txt
        runctl.sh can-advance|can-merge <run-id>
        runctl.sh block <run-id> < reason.txt
        runctl.sh resume <run-id>
+       runctl.sh unblock <run-id> < decision.txt
        runctl.sh finish <run-id> < post-merge-evidence.txt
 EOF
   exit 1
 }
 
 cleanup_lock() {
-  local lock_dir
+  local lock_dir owner
   [ -n "$LOCK_DIRS" ] || return
   while IFS= read -r lock_dir; do
     [ -n "$lock_dir" ] || continue
+    [ ! -L "$lock_dir" ] && [ -d "$lock_dir" ] && [ ! -L "$lock_dir/pid" ] || continue
+    owner="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+    [ "$owner" = "$$" ] || continue
     rm -f "$lock_dir/pid" 2>/dev/null || true
     rmdir "$lock_dir" 2>/dev/null || true
   done <<EOF
@@ -68,6 +72,7 @@ validate_phase() {
   phase_index "$1" >/dev/null 2>&1 || execute_task_die "unknown phase '$1'"
 }
 
+# Read evidence before any state mutex: stdin can block indefinitely on an open pipe.
 read_evidence() {
   local label="$1"
   [ ! -t 0 ] || execute_task_die "$label must be piped on stdin"
@@ -160,6 +165,28 @@ EOF
   esac
   [ "${#fingerprint}" -eq 64 ] \
     || execute_task_die "Claude required-review marker has an invalid fingerprint"
+  verify_claude_required_review "$marker"
+}
+
+verify_claude_required_review() {
+  local marker="$1" plugin_root authoritative
+  plugin_root="$(execute_task_claude_plugin_root)" \
+    || execute_task_die "cannot locate the single enabled codex-cc-triage required-review installation"
+  authoritative="$(env -u CODEX_CC_TRIAGE_STATE_DIR -u CODEX_CC_TRIAGE_PYTHON_BIN \
+    CODEX_CC_TRIAGE_PROJECT_DIR="$EXECUTE_TASK_ROOT" \
+    bash "$plugin_root/scripts/review-state.sh" check "review-$EXECUTE_TASK_RUN_ID" 2>/dev/null)" \
+    || execute_task_die "codex-cc-triage reports no gate-eligible approval for thread 'review-$EXECUTE_TASK_RUN_ID'"
+  [ "$authoritative" = "$marker" ] \
+    || execute_task_die "recorded Claude marker does not match codex-cc-triage state for 'review-$EXECUTE_TASK_RUN_ID'"
+}
+
+validate_same_candidate_reconsideration() {
+  printf '%s\n' "$EVIDENCE" | grep -Eq '^finding: .+' \
+    || execute_task_die "same-candidate approval must name the reconsidered finding as 'finding: ...'"
+  printf '%s\n' "$EVIDENCE" | grep -Eq '^disposition: (refuted|deferred)( |$)' \
+    || execute_task_die "same-candidate approval must record 'disposition: refuted|deferred'"
+  printf '%s\n' "$EVIDENCE" | grep -Eq '^(source: .+:[1-9][0-9]*|issue: .+)$' \
+    || execute_task_die "same-candidate approval must cite either 'source: <path>:<line>' or 'issue: <reference>'"
 }
 
 state_paths() {
@@ -168,7 +195,10 @@ state_paths() {
   META="$EXECUTE_TASK_RUNS_DIR/$EXECUTE_TASK_RUN_ID.meta"
   JOURNAL="$EXECUTE_TASK_RUNS_DIR/$EXECUTE_TASK_RUN_ID.md"
   STATE="$EXECUTE_TASK_RUNS_DIR/$EXECUTE_TASK_RUN_ID.state.json"
+  PREPARED_META="$EXECUTE_TASK_RUNS_DIR/$EXECUTE_TASK_RUN_ID.prepared-dir"
   execute_task_assert_regular_or_missing "$STATE"
+  execute_task_assert_regular_or_missing "$PREPARED_META"
+  [ ! -e "$PREPARED_META" ] || execute_task_assert_single_link "$PREPARED_META" "prepared-path state"
   execute_task_assert_run_owner "$META"
 }
 
@@ -223,10 +253,10 @@ validate_state_shape() {
       (.phase.name as $phase | ["readiness", "planning", "implementation", "testing", "acceptance",
         "candidate", "review", "delivery", "done"] | index($phase) != null) and
       (.phase.status == "in_progress" or .phase.status == "completed") and
-      (.completed_phases | type == "array") and (.tasks | type == "array") and
+      (.completed_phases | type == "array") and
+      (.completed_phases | unique | length) == (.completed_phases | length) and
+      (.tasks | type == "array") and
       ([.tasks[].id] | unique | length) == (.tasks | length) and
-      ([.tasks[].ui_task_id | select(. != null)] | unique | length) ==
-        ([.tasks[].ui_task_id | select(. != null)] | length) and
       (.gates | type == "array") and
       ([.gates[].id] | unique | length) == (.gates | length) and
       .required_reviewers == ["owner-review", "mattpocock", "claude"] and
@@ -234,9 +264,9 @@ validate_state_shape() {
       ([.reviews[].reviewer] | sort) == ([.required_reviewers[]] | sort) and
       (.review_history | type == "array") and
       (.invalidations | type == "array") and
-      (.fix_round | type == "number" and . >= 0 and floor == .) and
+      (.fix_round | type == "number" and . >= 0 and . <= 999999 and floor == .) and
       all(.tasks[];
-        keys == ["description", "evidence", "id", "phase", "status", "ui_task_id", "updated_at"] and
+        keys == ["description", "evidence", "id", "phase", "status", "updated_at"] and
         (.id | id) and (.description | type == "string" and length > 0) and
         (.phase as $task_phase | ["implementation", "testing", "acceptance", "candidate", "review",
           "delivery"] | index($task_phase) != null) and
@@ -275,37 +305,73 @@ load_state() {
 }
 
 acquire_lock() {
-  local requested_lock="$1" label="$2" owner
-  [ ! -L "$requested_lock" ] || execute_task_die "refusing symlinked $label lock"
-  if mkdir "$requested_lock" 2>/dev/null; then
-    LOCK_DIRS="${LOCK_DIRS}${LOCK_DIRS:+
-}$requested_lock"
-    printf '%s\n' "$$" > "$requested_lock/pid" 2>/dev/null \
-      || execute_task_die "cannot record $label lock owner"
-    return
+  local requested_lock="$1" label="$2" reclaim_lock lock_path owner stale moved now modified
+  reclaim_lock="$requested_lock.reclaim"
+  for lock_path in "$requested_lock" "$reclaim_lock"; do
+    [ ! -L "$lock_path" ] && { [ ! -e "$lock_path" ] || [ -d "$lock_path" ]; } \
+      || execute_task_die "invalid $label lock path"
+    [ ! -L "$lock_path/pid" ] \
+      || execute_task_die "refusing symlinked $label lock owner"
+  done
+
+  # Serialize acquisition and stale-generation replacement. A killed reclaimer fails closed.
+  mkdir "$reclaim_lock" 2>/dev/null \
+    || execute_task_die "$label lock recovery is held by another process"
+  if ! (set -C; printf '%s\n' "$$" > "$reclaim_lock/pid") 2>/dev/null \
+      || [ "$(cat "$reclaim_lock/pid" 2>/dev/null || true)" != "$$" ]; then
+    [ -L "$reclaim_lock/pid" ] || rm -f "$reclaim_lock/pid" 2>/dev/null || true
+    rmdir "$reclaim_lock" 2>/dev/null || true
+    execute_task_die "cannot own $label lock recovery"
   fi
-  [ ! -L "$requested_lock" ] && [ -d "$requested_lock" ] \
-    || execute_task_die "invalid $label lock"
-  [ ! -L "$requested_lock/pid" ] \
-    || execute_task_die "refusing symlinked $label lock owner"
-  owner="$(cat "$requested_lock/pid" 2>/dev/null || true)"
-  case "$owner" in
-    ''|*[!0-9]*) ;;
-    *)
-      if ! kill -0 "$owner" 2>/dev/null; then
-        rm -f "$requested_lock/pid" 2>/dev/null || true
-        rmdir "$requested_lock" 2>/dev/null || true
-        if mkdir "$requested_lock" 2>/dev/null; then
-          LOCK_DIRS="${LOCK_DIRS}${LOCK_DIRS:+
+  LOCK_DIRS="${LOCK_DIRS}${LOCK_DIRS:+
+}$reclaim_lock"
+
+  if [ -d "$requested_lock" ]; then
+    owner="$(cat "$requested_lock/pid" 2>/dev/null || true)"
+    case "$owner" in
+      [1-9]|[1-9][0-9]*)
+        kill -0 "$owner" 2>/dev/null && execute_task_die "$label is held by another process"
+        ;;
+      '')
+        now="$(date +%s 2>/dev/null || true)"
+        modified="$(stat -c '%Y' "$requested_lock" 2>/dev/null \
+          || stat -f '%m' "$requested_lock" 2>/dev/null || true)"
+        [ -n "$now" ] && [ -n "$modified" ] \
+          || execute_task_die "$label has an ownerless lock of unknown age"
+        case "$now:$modified" in *[!0-9:]*) execute_task_die "$label has an invalid lock age" ;; esac
+        [ $((now - modified)) -gt 60 ] \
+          || execute_task_die "$label has a fresh ownerless lock"
+        ;;
+      *) ;;
+    esac
+    stale="$requested_lock.stale.$$"
+    [ ! -e "$stale" ] && [ ! -L "$stale" ] \
+      || execute_task_die "stale $label lock path already exists"
+    mv "$requested_lock" "$stale" 2>/dev/null \
+      || execute_task_die "$label lock changed during stale takeover"
+    moved="$(cat "$stale/pid" 2>/dev/null || true)"
+    if [ "$moved" != "$owner" ]; then
+      mv "$stale" "$requested_lock" 2>/dev/null || true
+      execute_task_die "$label lock generation changed during stale takeover"
+    fi
+    rm -f "$stale/pid" 2>/dev/null || true
+    if ! rmdir "$stale" 2>/dev/null; then
+      mv "$stale" "$requested_lock" 2>/dev/null || true
+      execute_task_die "cannot remove stale $label lock"
+    fi
+  fi
+
+  mkdir "$requested_lock" 2>/dev/null || execute_task_die "cannot acquire $label"
+  if ! (set -C; printf '%s\n' "$$" > "$requested_lock/pid") 2>/dev/null \
+      || [ "$(cat "$requested_lock/pid" 2>/dev/null || true)" != "$$" ]; then
+    rm -f "$requested_lock/pid" 2>/dev/null || true
+    rmdir "$requested_lock" 2>/dev/null || true
+    execute_task_die "cannot record $label lock owner"
+  fi
+  LOCK_DIRS="${LOCK_DIRS}${LOCK_DIRS:+
 }$requested_lock"
-          printf '%s\n' "$$" > "$requested_lock/pid" 2>/dev/null \
-            || execute_task_die "cannot record $label lock owner"
-          return
-        fi
-      fi
-      ;;
-  esac
-  execute_task_die "$label is held by another process"
+  rm -f "$reclaim_lock/pid" 2>/dev/null || true
+  rmdir "$reclaim_lock" 2>/dev/null || true
 }
 
 lock_state() {
@@ -391,7 +457,7 @@ assert_reviews_approved() {
 }
 
 verify_hosted_ci() {
-  local candidate pr_number pr_json checks_json final_pr_json
+  local candidate pr_number pr_json checks_json checks_error final_pr_json
   candidate="${1:-$(jq -r '.candidate.sha // empty' "$STATE")}"
   pr_number="${2:-$(jq -r '.ci.pr_number // empty' "$STATE")}"
   [ -n "$candidate" ] && [ -n "$pr_number" ] \
@@ -405,8 +471,17 @@ verify_hosted_ci() {
     || execute_task_die "PR #$pr_number is not open at candidate $candidate"
 $pr_json
 EOF
-  checks_json="$(gh pr checks "$pr_number" --required --json bucket,name,state 2>/dev/null)" \
-    || execute_task_die "required checks are not green for PR #$pr_number"
+  checks_error="$(mktemp "${TMPDIR:-/tmp}/codex-tuner-checks.XXXXXX")" \
+    || execute_task_die "cannot create a temporary file for the CI check output"
+  if ! checks_json="$(gh pr checks "$pr_number" --required --json bucket,name,state 2>"$checks_error")"; then
+    if grep -q 'no checks reported' "$checks_error"; then
+      rm -f "$checks_error"
+      execute_task_die "PR #$pr_number has no required checks configured on GitHub; delivery cannot verify hosted CI until the target branch requires at least one check"
+    fi
+    rm -f "$checks_error"
+    execute_task_die "required checks are not green for PR #$pr_number"
+  fi
+  rm -f "$checks_error"
   jq -e 'length > 0 and all(.[]; .bucket == "pass")' >/dev/null 2>&1 <<EOF \
     || execute_task_die "PR #$pr_number has missing, pending, skipped, cancelled, or failed required checks"
 $checks_json
@@ -453,6 +528,79 @@ validate_delivery_state() {
     || execute_task_die "all run tasks must be completed before delivery"
 }
 
+prepared_directory() {
+  local create="${1:-false}" prepared temporary lines
+  if [ -f "$PREPARED_META" ]; then
+    lines="$(wc -l < "$PREPARED_META" 2>/dev/null | tr -d ' ')"
+    [ "$lines" = 1 ] || execute_task_die "prepared-path state must contain exactly one line"
+    prepared="$(cat "$PREPARED_META")"
+    [ -n "$prepared" ] || execute_task_die "prepared-path state is empty"
+  else
+    [ "$create" = true ] || { printf '\n'; return 0; }
+    prepared="$(execute_task_prepared_dir)" || exit 1
+    execute_task_validate_prepared_dir "$prepared"
+    temporary="$(mktemp "$PREPARED_META.tmp.XXXXXX")" \
+      || execute_task_die "cannot create prepared-path state"
+    if printf '%s\n' "$prepared" > "$temporary" && chmod 600 "$temporary" \
+        && mv -f "$temporary" "$PREPARED_META"; then
+      :
+    else
+      rm -f "$temporary" 2>/dev/null || true
+      execute_task_die "cannot persist prepared-path state"
+    fi
+  fi
+  execute_task_validate_prepared_dir "$prepared"
+  printf '%s\n' "$prepared"
+}
+
+ensure_prepared_directory() {
+  local base repository_dir path resolved
+  repository_dir="$(dirname -- "$PREPARED_DIR")"
+  base="$(dirname -- "$repository_dir")"
+  for path in "$base" "$repository_dir" "$PREPARED_DIR"; do
+    [ ! -L "$path" ] || execute_task_die "refusing symlinked prepared-file directory: $path"
+    if [ ! -e "$path" ]; then
+      mkdir "$path" 2>/dev/null || {
+        [ -d "$path" ] && [ ! -L "$path" ] \
+          || execute_task_die "cannot create prepared-file directory: $path"
+      }
+    fi
+    [ -d "$path" ] && [ -O "$path" ] \
+      || execute_task_die "prepared-file directory is not owned by the current user: $path"
+    chmod 700 "$path" || execute_task_die "cannot secure prepared-file directory: $path"
+    resolved="$(CDPATH='' cd -- "$path" 2>/dev/null && pwd -P || true)"
+    [ "$resolved" = "$path" ] \
+      || execute_task_die "prepared-file directory escapes its owned path: $path"
+  done
+}
+
+cleanup_prepared_files() {
+  local prepared_dir path repository_dir base
+  prepared_dir="$(prepared_directory false)" || exit 1
+  [ -n "$prepared_dir" ] || return 0
+  if [ ! -e "$prepared_dir" ] && [ ! -L "$prepared_dir" ]; then
+    rm -f -- "$PREPARED_META" || execute_task_die "cannot clear prepared-path state"
+    return 0
+  fi
+  [ ! -L "$prepared_dir" ] && [ -d "$prepared_dir" ] && [ -O "$prepared_dir" ] \
+    || execute_task_die "refusing unsafe prepared-file directory during cleanup"
+  [ "$(CDPATH='' cd -- "$prepared_dir" 2>/dev/null && pwd -P || true)" = "$prepared_dir" ] \
+    || execute_task_die "prepared-file directory moved before cleanup"
+  for path in "$prepared_dir/commit-message" "$prepared_dir/pr-body"; do
+    [ ! -e "$path" ] && [ ! -L "$path" ] && continue
+    [ ! -d "$path" ] || execute_task_die "refusing prepared-file directory entry during cleanup"
+    execute_task_assert_single_link "$path" "prepared file"
+    rm -f -- "$path" || execute_task_die "cannot remove prepared file: $path"
+  done
+  rmdir "$prepared_dir" 2>/dev/null \
+    || execute_task_die "prepared-file directory contains unowned entries; inspect $prepared_dir"
+  repository_dir="$(dirname -- "$prepared_dir")"
+  base="$(dirname -- "$repository_dir")"
+  rmdir "$repository_dir" 2>/dev/null || true
+  rmdir "$base" 2>/dev/null || true
+  rm -f -- "$PREPARED_META" || execute_task_die "cannot clear prepared-path state"
+}
+
 validate_phase_completion() {
   local phase="$1" candidate required_phase
   assert_phase_tasks_complete "$phase"
@@ -464,6 +612,7 @@ validate_phase_completion() {
           "$STATE" >/dev/null 2>&1 \
           || execute_task_die "planning must create a '$required_phase' lifecycle task"
       done
+      assert_gate_passed planning
       ;;
     implementation)
       jq -e 'any(.tasks[]; .phase == "implementation")' "$STATE" >/dev/null 2>&1 \
@@ -485,6 +634,24 @@ validate_phase_completion() {
 
 SUBCOMMAND="${1:-}"
 [ -n "$SUBCOMMAND" ] || usage
+
+EVIDENCE_LABEL=""
+case "$SUBCOMMAND" in
+  phase) [ "${3:-}" = "fix" ] && EVIDENCE_LABEL="fix-loop reason" ;;
+  task)
+    case "${3:-}" in
+      add) EVIDENCE_LABEL="task description" ;;
+      complete|block) EVIDENCE_LABEL="task ${3} evidence" ;;
+    esac
+    ;;
+  gate) [ "${3:-}" = "record" ] && EVIDENCE_LABEL="gate evidence" ;;
+  review) [ "${3:-}" = "record" ] && EVIDENCE_LABEL="review evidence" ;;
+  ci) [ "${3:-}" = "record" ] && EVIDENCE_LABEL="CI evidence" ;;
+  block) [ "$#" -eq 2 ] && EVIDENCE_LABEL="block reason" ;;
+  unblock) [ "$#" -eq 2 ] && EVIDENCE_LABEL="unblock decision" ;;
+  finish) [ "$#" -eq 2 ] && EVIDENCE_LABEL="post-merge reconciliation evidence" ;;
+esac
+[ -z "$EVIDENCE_LABEL" ] || read_evidence "$EVIDENCE_LABEL"
 
 case "$SUBCOMMAND" in
   init)
@@ -636,8 +803,21 @@ case "$SUBCOMMAND" in
         [ "$(jq -r '.phase.status' "$STATE")" = "in_progress" ] \
           || execute_task_die "phase '$CURRENT' is already completed"
         validate_phase_completion "$CURRENT"
+        IMPLEMENTATION_TREE=""
+        if [ "$CURRENT" = "implementation" ]; then
+          IMPLEMENTATION_TREE="$(execute_task_worktree_tree_sha)" \
+            || execute_task_die "cannot snapshot worktree content at implementation completion"
+          [ -n "$IMPLEMENTATION_TREE" ] \
+            || execute_task_die "implementation completion produced an empty worktree fingerprint"
+        fi
         update_state '.phase.status = "completed" |
-          .completed_phases += [$phase]' --arg phase "$CURRENT"
+          .completed_phases += [$phase] |
+          if ($tree | length) > 0 then
+            .gates = ([.gates[] | select(.id != "implementation-tree")] +
+              [{id: "implementation-tree", status: "pass", sha: null, tree_sha: $tree,
+                evidence: "worktree content recorded when implementation completed",
+                recorded_at: $updated_at}])
+          else . end' --arg phase "$CURRENT" --arg tree "$IMPLEMENTATION_TREE"
         ;;
       fix)
         [ "$#" -eq 3 ] || usage
@@ -646,8 +826,10 @@ case "$SUBCOMMAND" in
           testing|acceptance|candidate|review|delivery) ;;
           *) execute_task_die "fix loop may start only from testing, acceptance, candidate, review, or delivery" ;;
         esac
-        read_evidence "fix-loop reason"
-        ROUND=$(( $(jq -r '.fix_round' "$STATE") + 1 ))
+        CURRENT_ROUND="$(jq -r '.fix_round' "$STATE")"
+        [ "$CURRENT_ROUND" -lt 999999 ] \
+          || execute_task_die "fix-loop limit reached (999999)"
+        ROUND=$((CURRENT_ROUND + 1))
         FIX_ID="review-fix-$ROUND"
         update_state '
           .invalidations += [{at: $updated_at, reason: $reason, candidate_sha: .candidate.sha}] |
@@ -657,7 +839,7 @@ case "$SUBCOMMAND" in
           .tasks |= map(if .phase == "implementation" then . else
             .status = "pending" | .evidence = null | .updated_at = $updated_at end) |
           .tasks += [{id: $task, phase: "implementation", description: $reason,
-            status: "pending", ui_task_id: null, evidence: null, updated_at: $updated_at}] |
+            status: "pending", evidence: null, updated_at: $updated_at}] |
           .gates = [.gates[] | select(.id != "testing" and .id != "acceptance" and .id != "dod")] |
           .reviews = [.required_reviewers[] as $reviewer |
             {reviewer: $reviewer, verdict: "PENDING", sha: null, evidence: null, recorded_at: null}] |
@@ -683,27 +865,17 @@ case "$SUBCOMMAND" in
           implementation|testing|acceptance|candidate|review|delivery) ;;
           *) execute_task_die "task phase must be implementation, testing, acceptance, candidate, review, or delivery" ;;
         esac
-        UI_TASK_ID=""
-        shift 5
-        while [ "$#" -gt 0 ]; do
-          case "$1" in
-            --ui-task-id) [ "$#" -ge 2 ] || execute_task_die "--ui-task-id requires a value"; UI_TASK_ID="$2"; shift ;;
-            *) execute_task_die "unknown task option '$1'" ;;
-          esac
-          shift
-        done
+        [ "$#" -eq 5 ] || usage
         [ "$(jq -r '.phase.name' "$STATE")" = "planning" ] \
           || execute_task_die "tasks may be added only during planning (fix tasks are created by 'phase fix')"
-        read_evidence "task description"
         case "$TASK_ID" in
           review-fix-*) execute_task_die "task IDs beginning with 'review-fix-' are reserved for fix-loop tasks" ;;
         esac
         jq -e --arg id "$TASK_ID" 'all(.tasks[]; .id != $id)' "$STATE" >/dev/null 2>&1 \
           || execute_task_die "task '$TASK_ID' already exists"
         update_state '.tasks += [{id: $id, phase: $phase, description: $description,
-          status: "pending", ui_task_id: (if ($ui | length) == 0 then null else $ui end),
-          evidence: null, updated_at: $updated_at}]' \
-          --arg id "$TASK_ID" --arg phase "$TASK_PHASE" --arg description "$EVIDENCE" --arg ui "$UI_TASK_ID"
+          status: "pending", evidence: null, updated_at: $updated_at}]' \
+          --arg id "$TASK_ID" --arg phase "$TASK_PHASE" --arg description "$EVIDENCE"
         ;;
       start)
         [ "$#" -eq 4 ] || usage
@@ -716,7 +888,6 @@ case "$SUBCOMMAND" in
         ;;
       complete|block)
         [ "$#" -eq 4 ] || usage
-        read_evidence "task $ACTION evidence"
         CURRENT="$(jq -r '.phase.name' "$STATE")"
         jq -e --arg id "$TASK_ID" --arg phase "$CURRENT" '
           any(.tasks[]; .id == $id and .phase == $phase and .status == "in_progress")
@@ -725,16 +896,6 @@ case "$SUBCOMMAND" in
         update_state '(.tasks[] | select(.id == $id)) |=
           (.status = $status | .evidence = $evidence | .updated_at = $updated_at)' \
           --arg id "$TASK_ID" --arg status "$NEW_STATUS" --arg evidence "$EVIDENCE"
-        ;;
-      bind-ui)
-        [ "$#" -eq 5 ] || usage
-        UI_TASK_ID="$5"; [ -n "$UI_TASK_ID" ] || execute_task_die "ui-task-id is required"
-        jq -e --arg id "$TASK_ID" 'any(.tasks[]; .id == $id)' "$STATE" >/dev/null 2>&1 \
-          || execute_task_die "task '$TASK_ID' not found"
-        jq -e --arg ui "$UI_TASK_ID" 'all(.tasks[]; (.ui_task_id // "") != $ui)' "$STATE" >/dev/null 2>&1 \
-          || execute_task_die "ui-task-id '$UI_TASK_ID' is already bound"
-        update_state '(.tasks[] | select(.id == $id)).ui_task_id = $ui' \
-          --arg id "$TASK_ID" --arg ui "$UI_TASK_ID"
         ;;
       *) execute_task_die "unknown task action '$ACTION'" ;;
     esac
@@ -758,8 +919,11 @@ case "$SUBCOMMAND" in
     [ "$(jq -r '.phase.status' "$STATE")" = "in_progress" ] \
       || execute_task_die "gate evidence is immutable after phase '$CURRENT' completes"
     case "$GATE_ID:$CURRENT" in
-      dor:readiness|testing:testing|acceptance:acceptance|dod:delivery) ;;
-      dor:*|testing:*|acceptance:*|dod:*) execute_task_die "gate '$GATE_ID' cannot be recorded in phase '$CURRENT'" ;;
+      dor:readiness|planning:planning|testing:testing|acceptance:acceptance|dod:delivery) ;;
+      dor:*|planning:*|testing:*|acceptance:*|dod:*) execute_task_die "gate '$GATE_ID' cannot be recorded in phase '$CURRENT'" ;;
+      implementation-tree:*)
+        execute_task_die "gate 'implementation-tree' is written by 'phase complete implementation' and cannot be recorded by hand"
+        ;;
       *) ;;
     esac
     if [ "$GATE_ID" = "dod" ]; then
@@ -776,10 +940,15 @@ case "$SUBCOMMAND" in
           ;;
       esac
     fi
-    read_evidence "gate evidence"
     GATE_TREE=""
     if [ "$GATE_ID" = "testing" ] && [ "$GATE_STATUS" = "pass" ]; then
       GATE_TREE="$(execute_task_worktree_tree_sha)"
+      IMPLEMENTATION_TREE="$(jq -r \
+        '[.gates[] | select(.id == "implementation-tree")][-1].tree_sha // empty' "$STATE")"
+      [ -n "$IMPLEMENTATION_TREE" ] \
+        || execute_task_die "implementation completion recorded no worktree content; re-enter and complete implementation"
+      [ "$GATE_TREE" = "$IMPLEMENTATION_TREE" ] \
+        || execute_task_die "task paths changed after implementation completed; testing may not carry a mutation — revert it, or return through phase fix"
     fi
     update_state '.gates = ([.gates[] | select(.id != $id)] +
       [{id: $id, status: $status, sha: (if ($sha | length) == 0 then null else $sha end),
@@ -787,6 +956,27 @@ case "$SUBCOMMAND" in
         evidence: $evidence, recorded_at: $updated_at}])' \
       --arg id "$GATE_ID" --arg status "$GATE_STATUS" --arg sha "$GATE_SHA" \
       --arg tree "$GATE_TREE" --arg evidence "$EVIDENCE"
+    ;;
+
+  prepare)
+    [ "$#" -eq 3 ] || usage
+    state_paths "$2"; lock_state; load_state; assert_active
+    case "$3" in
+      commit-message|pr-body) ;;
+      *) execute_task_die "prepared-file name must be 'commit-message' or 'pr-body'" ;;
+    esac
+    # Resolve and validate the entire path before creating any scratch directory.
+    PREPARED_DIR="$(prepared_directory true)" || exit 1
+    ensure_prepared_directory
+    PREPARED="$PREPARED_DIR/$3"
+    if [ ! -e "$PREPARED" ] && [ ! -L "$PREPARED" ]; then
+      ( set -C; : > "$PREPARED" ) 2>/dev/null || true
+    fi
+    [ ! -L "$PREPARED" ] && [ -f "$PREPARED" ] && [ -O "$PREPARED" ] \
+      || execute_task_die "prepared path is not an owned regular file: $3"
+    execute_task_assert_single_link "$PREPARED" "prepared file"
+    chmod 600 "$PREPARED" || execute_task_die "cannot secure prepared file '$3'"
+    printf '%s\n' "$PREPARED"
     ;;
 
   candidate)
@@ -832,14 +1022,12 @@ case "$SUBCOMMAND" in
     SHA="$(resolve_commit "$6")"
     CANDIDATE="$(jq -r '.candidate.sha // empty' "$STATE")"
     [ "$SHA" = "$CANDIDATE" ] || execute_task_die "review verdict is stale: candidate is $CANDIDATE, verdict names $SHA"
-    if [ "$VERDICT" = "APPROVE" ]; then
-      jq -e --arg reviewer "$REVIEWER" --arg sha "$SHA" '
-        any(.reviews[]; .reviewer == $reviewer and .verdict == "REQUEST_CHANGES" and .sha == $sha)
-      ' "$STATE" >/dev/null 2>&1 \
-        && execute_task_die "reviewer '$REVIEWER' already requested changes on candidate $SHA; use phase fix"
-    fi
     assert_current_candidate
-    read_evidence "review evidence"
+    if [ "$VERDICT" = "APPROVE" ] && jq -e --arg reviewer "$REVIEWER" --arg sha "$SHA" '
+        any(.reviews[]; .reviewer == $reviewer and .verdict == "REQUEST_CHANGES" and .sha == $sha)
+      ' "$STATE" >/dev/null 2>&1; then
+      validate_same_candidate_reconsideration
+    fi
     if [ "$REVIEWER" = "claude" ] && [ "$VERDICT" = "APPROVE" ]; then
       validate_claude_approval_evidence
     fi
@@ -886,7 +1074,6 @@ case "$SUBCOMMAND" in
     elif [ -n "$PR_NUMBER" ]; then
       execute_task_die "--pr is accepted only when recording successful CI"
     fi
-    read_evidence "CI evidence"
     if [ "$CI_STATUS" = "success" ]; then
       EVIDENCE="PR #$PR_NUMBER required checks verified at $SHA
 $EVIDENCE"
@@ -918,7 +1105,7 @@ $EVIDENCE"
 
   block)
     [ "$#" -eq 2 ] || usage
-    state_paths "$2"; lock_state; load_state; assert_active; read_evidence "block reason"
+    state_paths "$2"; lock_state; load_state; assert_active
     update_state '.status = "blocked" | .blocked_reason = $reason' --arg reason "$EVIDENCE"
     ;;
 
@@ -926,12 +1113,31 @@ $EVIDENCE"
     [ "$#" -eq 2 ] || usage
     state_paths "$2"; lock_state; lock_initialization; load_state
     case "$(jq -r '.status' "$STATE")" in
-      blocked|active) assert_no_other_active_run ;;
+      active) assert_no_other_active_run ;;
+      blocked)
+        execute_task_die "run '$EXECUTE_TASK_RUN_ID' is blocked: $(jq -r '.blocked_reason' "$STATE")
+resolve it with the user, then 'runctl.sh unblock $EXECUTE_TASK_RUN_ID' with the decision on stdin"
+        ;;
       completed) execute_task_die "completed run '$EXECUTE_TASK_RUN_ID' cannot be resumed" ;;
     esac
-    [ "$(jq -r '.status' "$STATE")" = "active" ] \
-      || update_state '.status = "active" | .blocked_reason = null'
     jq '{run_id,status,phase,spec,candidate,ci}' "$STATE"
+    ;;
+
+  unblock)
+    [ "$#" -eq 2 ] || usage
+    state_paths "$2"; lock_state; lock_initialization; load_state
+    case "$(jq -r '.status' "$STATE")" in
+      blocked) ;;
+      *) execute_task_die "run '$EXECUTE_TASK_RUN_ID' is $(jq -r '.status' "$STATE"), not blocked" ;;
+    esac
+    assert_no_other_active_run
+    BLOCKED_REASON="$(jq -r '.blocked_reason' "$STATE")"
+    printf 'unblock decision recorded (state remains authoritative) after: %s\ndecision: %s\n' \
+      "$BLOCKED_REASON" "$EVIDENCE" \
+      | bash "$SCRIPT_DIR/journal.sh" append "$EXECUTE_TASK_RUN_ID" >/dev/null \
+      || execute_task_die "cannot journal the unblock decision; refusing to reactivate run '$EXECUTE_TASK_RUN_ID'"
+    update_state '.status = "active" | .blocked_reason = null'
+    printf 'UNBLOCKED %s\n%s\n' "$EXECUTE_TASK_RUN_ID" "$EVIDENCE"
     ;;
 
   finish)
@@ -943,7 +1149,7 @@ $EVIDENCE"
       || execute_task_die "finish requires completed delivery phase"
     validate_delivery_state
     verify_merged_pr
-    read_evidence "post-merge reconciliation evidence"
+    cleanup_prepared_files
     update_state '.status = "completed" | .phase = {name: "done", status: "completed"} |
       .completed_phases += ["done"] | .completion_evidence = $evidence | .completed_at = $updated_at' \
       --arg evidence "$EVIDENCE"

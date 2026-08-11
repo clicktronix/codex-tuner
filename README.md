@@ -24,6 +24,11 @@ Authoritative run state and journals live under `.agent-state/codex-tuner/`; the
 `.git/` writes and works in Codex's default workspace sandbox. The artifact guard also covers the
 legacy `.codex/execute-task-runs/` path.
 
+The delivery gate verifies Claude approval against the state held by the single enabled
+`codex-cc-triage@codex-cc-triage` installation; pasted approval text is not authority. GitHub delivery
+also requires at least one required check on the target branch. Codex instructions and optional hooks
+are guardrails; candidate/tree, reviewer-state, CI, and merge-head checks are the runtime boundaries.
+
 ## Install
 
 Install the three runtime companion skills from the current

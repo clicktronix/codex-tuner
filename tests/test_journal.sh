@@ -78,6 +78,22 @@ else
   failures=1
 fi
 
+JOURNAL="$REPO/$STATE_REL/execute-task-runs/run-1.md"
+mv "$JOURNAL" "$JOURNAL.safe"
+ln "$REPO/file.txt" "$JOURNAL"
+VICTIM_BEFORE="$(cat "$REPO/file.txt")"
+printf 'must not write through a hard link\n' \
+  | EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/journal.sh" append run-1 >/dev/null 2>&1
+rc=$?
+if [ "$rc" -eq 1 ] && [ "$(cat "$REPO/file.txt")" = "$VICTIM_BEFORE" ]; then
+  echo "PASS append-refuses-hard-linked-journal"
+else
+  echo "FAIL append-refuses-hard-linked-journal (rc=$rc)"
+  failures=1
+fi
+rm -f "$JOURNAL"
+mv "$JOURNAL.safe" "$JOURNAL"
+
 for i in 1 2 3 4 5 6 7 8; do
   EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/journal.sh" append run-1 "entry $i" >/dev/null
 done
