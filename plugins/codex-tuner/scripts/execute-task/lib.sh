@@ -117,61 +117,88 @@ execute_task_lock_is_stale() {
   esac
 }
 
-# Acquire a reclaim mutex and replace a stale generation without acting on a
-# pre-takeover sample. Return 0 when owned, 1 when busy, and 2 for unsafe state.
+execute_task_lock_guard_acquire() {
+  local guard="$1" rc
+  [ ! -L "$guard" ] && { [ ! -e "$guard" ] || [ -f "$guard" ]; } || return 2
+  [ ! -e "$guard" ] || execute_task_assert_single_link "$guard" "lock-recovery guard"
+  exec 9>"$guard" || return 2
+  if [ -L "$guard" ] || [ ! -f "$guard" ]; then
+    exec 9>&-
+    return 2
+  fi
+  execute_task_assert_single_link "$guard" "lock-recovery guard"
+  if command -v flock >/dev/null 2>&1; then
+    flock -w 1 9
+    rc=$?
+  elif command -v lockf >/dev/null 2>&1; then
+    lockf -s -t 1 9
+    rc=$?
+  else
+    rc=2
+  fi
+  if [ "$rc" -ne 0 ]; then
+    exec 9>&-
+    [ "$rc" -eq 2 ] && return 2
+    return 1
+  fi
+  return 0
+}
+
+execute_task_lock_guard_release() {
+  exec 9>&-
+}
+
+# Use a process-scoped advisory guard while replacing a stale directory
+# generation. The kernel releases the guard on crash, so an interrupted
+# reclaimer cannot require a recursively reclaimable mutex of its own.
+# Return 0 when owned, 1 when busy, and 2 for unsafe state.
 execute_task_acquire_reclaim_lock() {
-  local reclaim_lock="$1" tries=0 sampled moved stale
-  while [ "$tries" -lt 100 ]; do
-    [ ! -L "$reclaim_lock" ] && { [ ! -e "$reclaim_lock" ] || [ -d "$reclaim_lock" ]; } \
-      || return 2
-    [ ! -L "$reclaim_lock/pid" ] \
-      && { [ ! -e "$reclaim_lock/pid" ] || [ -f "$reclaim_lock/pid" ]; } \
-      || return 2
-    [ ! -e "$reclaim_lock/pid" ] || execute_task_assert_single_link "$reclaim_lock/pid" "lock-recovery owner"
-    if mkdir "$reclaim_lock" 2>/dev/null; then
-      if (set -C; printf '%s\n' "$$" > "$reclaim_lock/pid") 2>/dev/null \
-          && [ "$(cat "$reclaim_lock/pid" 2>/dev/null || true)" = "$$" ]; then
-        return 0
-      fi
+  local reclaim_lock="$1" guard stale owner moved lock_path
+  guard="$(dirname -- "$reclaim_lock")/.reclaim.guard"
+  stale="$reclaim_lock.stale"
+  execute_task_lock_guard_acquire "$guard" || return $?
+
+  for lock_path in "$reclaim_lock" "$stale"; do
+    [ ! -L "$lock_path" ] && { [ ! -e "$lock_path" ] || [ -d "$lock_path" ]; } \
+      || { execute_task_lock_guard_release; return 2; }
+    [ ! -L "$lock_path/pid" ] \
+      && { [ ! -e "$lock_path/pid" ] || [ -f "$lock_path/pid" ]; } \
+      || { execute_task_lock_guard_release; return 2; }
+    [ ! -e "$lock_path/pid" ] \
+      || execute_task_assert_single_link "$lock_path/pid" "lock-recovery owner"
+  done
+  if [ -d "$stale" ]; then
+    rm -f "$stale/pid" 2>/dev/null || true
+    rmdir "$stale" 2>/dev/null \
+      || { execute_task_lock_guard_release; return 2; }
+  fi
+
+  if [ -d "$reclaim_lock" ]; then
+    owner="$(cat "$reclaim_lock/pid" 2>/dev/null || true)"
+    if [ -n "$owner" ] && ! execute_task_lock_is_stale "$reclaim_lock"; then
+      execute_task_lock_guard_release
+      return 1
+    fi
+    mv "$reclaim_lock" "$stale" 2>/dev/null \
+      || { execute_task_lock_guard_release; return 1; }
+    moved="$(cat "$stale/pid" 2>/dev/null || true)"
+    if [ "$moved" != "$owner" ]; then
+      execute_task_lock_guard_release
       return 2
     fi
-    if ! execute_task_lock_is_stale "$reclaim_lock"; then
-      tries=$((tries + 1))
-      sleep 0.01
-      continue
-    fi
-    sampled="$(cat "$reclaim_lock/pid" 2>/dev/null || true)"
-    stale="$reclaim_lock.stale.$$.$tries"
-    [ ! -e "$stale" ] && [ ! -L "$stale" ] || return 2
-    if ! mv "$reclaim_lock" "$stale" 2>/dev/null; then
-      tries=$((tries + 1))
-      sleep 0.01
-      continue
-    fi
-    moved="$(cat "$stale/pid" 2>/dev/null || true)"
-    if [ "$moved" != "$sampled" ]; then
-      # An empty moved generation was caught between mkdir and owner publish.
-      # Restoring it would strand a fresh ownerless directory after its creator
-      # fails to publish. Retire that interrupted generation and let contenders
-      # retry. A published generation is restored because its owner may already
-      # have entered the protected section.
-      if [ -z "$moved" ]; then
-        rmdir "$stale" 2>/dev/null || return 2
-      elif [ ! -e "$reclaim_lock" ] && [ ! -L "$reclaim_lock" ]; then
-        mv "$stale" "$reclaim_lock" 2>/dev/null || true
-      else
-        rm -f "$stale/pid" 2>/dev/null || true
-        rmdir "$stale" 2>/dev/null || true
-      fi
-      tries=$((tries + 1))
-      sleep 0.01
-      continue
-    fi
     rm -f "$stale/pid" 2>/dev/null || true
-    rmdir "$stale" 2>/dev/null || return 2
-    tries=$((tries + 1))
-  done
-  return 1
+    rmdir "$stale" 2>/dev/null \
+      || { execute_task_lock_guard_release; return 2; }
+  fi
+
+  if ! mkdir "$reclaim_lock" 2>/dev/null \
+      || ! (set -C; printf '%s\n' "$$" > "$reclaim_lock/pid") 2>/dev/null \
+      || [ "$(cat "$reclaim_lock/pid" 2>/dev/null || true)" != "$$" ]; then
+    execute_task_lock_guard_release
+    return 2
+  fi
+  execute_task_lock_guard_release
+  return 0
 }
 
 execute_task_read_meta() {
