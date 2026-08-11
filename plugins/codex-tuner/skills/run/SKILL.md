@@ -205,9 +205,14 @@ literal base, candidate SHA/tree, and current tracked spec:
 2. Invoke `$code-review` with the fixed base and committed spec; require its Standards, Spec, and
    architecture/systemic surfaces to have no unresolved blocking finding.
 3. Invoke the machine contract with literal `base_sha`, `candidate.sha`, `candidate.tree_sha`, and
-   `spec` from `runctl status`:
+   `spec` from `runctl status`. Resolve the branch-scoped thread instead of constructing it from the
+   run ID; linked worktrees may use the same run ID:
+   ```bash
+   REVIEW_THREAD="$(bash "<plugin-root>/scripts/execute-task/runctl.sh" reviewer-thread <literal-run-id>)"
+   ```
+   Then invoke the skill with the printed value substituted literally:
    ```text
-   $codex-cc-triage:claude-review --required --base <literal-base-sha> --spec <current-repo-relative-spec> --thread review-<literal-run-id> --cap 5 Review the complete candidate against the spec using unbiased correctness, architecture, systemic, security/data, and testing/operability lenses.
+   $codex-cc-triage:claude-review --required --base <literal-base-sha> --spec <current-repo-relative-spec> --thread <literal-review-thread> --cap 5 Review the complete candidate against the spec using unbiased correctness, architecture, systemic, security/data, and testing/operability lenses.
    ```
    `--cap 5` bounds the whole review thread's reserved attempt claims, including the first and any
    attempt later aborted for preflight, timeout, or tool failure; it does not cap findings and does

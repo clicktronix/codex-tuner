@@ -91,6 +91,116 @@ execute_task_assert_single_link() {
   [ "$links" = "1" ] || execute_task_die "$label must have exactly one link: $path"
 }
 
+execute_task_lock_mtime_epoch() {
+  local path="$1" value
+  value="$(stat -c '%Y' "$path" 2>/dev/null)" && [ -n "$value" ] \
+    && { printf '%s\n' "$value"; return 0; }
+  stat -f '%m' "$path" 2>/dev/null
+}
+
+execute_task_lock_is_stale() {
+  local lock_dir="$1" owner now modified
+  owner="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+  case "$owner" in
+    '')
+      now="$(date +%s 2>/dev/null || true)"
+      modified="$(execute_task_lock_mtime_epoch "$lock_dir" 2>/dev/null || true)"
+      case "$now:$modified" in :*|*:|*[!0-9:]*) return 1 ;; esac
+      [ $((now - modified)) -gt 60 ]
+      ;;
+    0|0[0-9]*|*[!0-9]*) return 0 ;;
+    *)
+      [ "${#owner}" -le 12 ] || return 0
+      kill -0 "$owner" 2>/dev/null && return 1
+      return 0
+      ;;
+  esac
+}
+
+execute_task_lock_guard_acquire() {
+  local guard="$1" rc
+  [ ! -L "$guard" ] && { [ ! -e "$guard" ] || [ -f "$guard" ]; } || return 2
+  [ ! -e "$guard" ] || execute_task_assert_single_link "$guard" "lock-recovery guard"
+  exec 9>"$guard" || return 2
+  if [ -L "$guard" ] || [ ! -f "$guard" ]; then
+    exec 9>&-
+    return 2
+  fi
+  execute_task_assert_single_link "$guard" "lock-recovery guard"
+  if command -v flock >/dev/null 2>&1; then
+    flock -w 1 9
+    rc=$?
+  elif command -v lockf >/dev/null 2>&1; then
+    lockf -s -t 1 9
+    rc=$?
+  else
+    rc=2
+  fi
+  if [ "$rc" -ne 0 ]; then
+    exec 9>&-
+    [ "$rc" -eq 2 ] && return 2
+    return 1
+  fi
+  return 0
+}
+
+execute_task_lock_guard_release() {
+  exec 9>&-
+}
+
+# Use a process-scoped advisory guard while replacing a stale directory
+# generation. The kernel releases the guard on crash, so an interrupted
+# reclaimer cannot require a recursively reclaimable mutex of its own.
+# Return 0 when owned, 1 when busy, and 2 for unsafe state.
+execute_task_acquire_reclaim_lock() {
+  local reclaim_lock="$1" guard stale owner moved lock_path
+  guard="$(dirname -- "$reclaim_lock")/.reclaim.guard"
+  stale="$reclaim_lock.stale"
+  execute_task_lock_guard_acquire "$guard" || return $?
+
+  for lock_path in "$reclaim_lock" "$stale"; do
+    [ ! -L "$lock_path" ] && { [ ! -e "$lock_path" ] || [ -d "$lock_path" ]; } \
+      || { execute_task_lock_guard_release; return 2; }
+    [ ! -L "$lock_path/pid" ] \
+      && { [ ! -e "$lock_path/pid" ] || [ -f "$lock_path/pid" ]; } \
+      || { execute_task_lock_guard_release; return 2; }
+    [ ! -e "$lock_path/pid" ] \
+      || execute_task_assert_single_link "$lock_path/pid" "lock-recovery owner"
+  done
+  if [ -d "$stale" ]; then
+    rm -f "$stale/pid" 2>/dev/null || true
+    rmdir "$stale" 2>/dev/null \
+      || { execute_task_lock_guard_release; return 2; }
+  fi
+
+  if [ -d "$reclaim_lock" ]; then
+    owner="$(cat "$reclaim_lock/pid" 2>/dev/null || true)"
+    if [ -n "$owner" ] && ! execute_task_lock_is_stale "$reclaim_lock"; then
+      execute_task_lock_guard_release
+      return 1
+    fi
+    mv "$reclaim_lock" "$stale" 2>/dev/null \
+      || { execute_task_lock_guard_release; return 1; }
+    moved="$(cat "$stale/pid" 2>/dev/null || true)"
+    if [ "$moved" != "$owner" ]; then
+      execute_task_lock_guard_release
+      return 2
+    fi
+    rm -f "$stale/pid" 2>/dev/null || true
+    rmdir "$stale" 2>/dev/null \
+      || { execute_task_lock_guard_release; return 2; }
+  fi
+
+  if ! mkdir "$reclaim_lock" 2>/dev/null \
+      || ! (set -C; printf '%s\n' "$$" > "$reclaim_lock/pid") 2>/dev/null \
+      || [ "$(cat "$reclaim_lock/pid" 2>/dev/null || true)" != "$$" ]; then
+    execute_task_lock_guard_release
+    return 2
+  fi
+  execute_task_lock_guard_release
+  return 0
+}
+
 execute_task_read_meta() {
   local key="$1" path="$2"
   awk -F= -v key="$key" '$1 == key {print substr($0, index($0, "=") + 1); exit}' "$path"
@@ -231,23 +341,20 @@ EOF
 # Build the tree represented by the complete working tree without touching the
 # user's index. The testing gate can therefore bind to the later candidate.
 execute_task_worktree_tree_sha() {
-  local real_index temporary_index tree
+  local real_index index_dir temporary_index tree
   real_index="$(git rev-parse --git-path index 2>/dev/null)" \
     || execute_task_die "cannot resolve Git index"
-  temporary_index="$(mktemp "${TMPDIR:-/tmp}/codex-tuner-index.XXXXXX")" \
+  case "$real_index" in /*) ;; *) real_index="$EXECUTE_TASK_ROOT/$real_index" ;; esac
+  index_dir="$(dirname -- "$real_index")"
+  [ ! -L "$index_dir" ] && [ -d "$index_dir" ] \
+    || execute_task_die "Git index directory is unsafe"
+  temporary_index="$(mktemp "$index_dir/codex-tuner-index.XXXXXX")" \
     || execute_task_die "cannot create temporary Git index"
-  if [ -f "$real_index" ]; then
-    cp "$real_index" "$temporary_index" || {
-      rm -f "$temporary_index"
-      execute_task_die "cannot copy Git index"
-    }
-  else
+  rm -f "$temporary_index"
+  GIT_INDEX_FILE="$temporary_index" git read-tree HEAD >/dev/null 2>&1 || {
     rm -f "$temporary_index"
-    GIT_INDEX_FILE="$temporary_index" git read-tree HEAD >/dev/null 2>&1 || {
-      rm -f "$temporary_index"
-      execute_task_die "cannot initialize temporary Git index"
-    }
-  fi
+    execute_task_die "cannot initialize temporary Git index"
+  }
   GIT_INDEX_FILE="$temporary_index" git add -A -- :/ >/dev/null 2>&1 || {
     rm -f "$temporary_index"
     execute_task_die "cannot snapshot working tree"
