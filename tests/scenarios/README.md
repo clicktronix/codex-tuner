@@ -1,9 +1,17 @@
 # Eval scenarios
 
-These decision probes cover the three load-bearing run rules: bare `[eyes]` criteria stop, red cheap
-gates are fixed before review, and small sensitive diffs still receive deep review.
+These decision probes cover the load-bearing readiness, planning, implementation, testing, review,
+CI, and acceptance rules in the run lifecycle.
 
 `baseline_observed` and `green_check` preserve historical Claude evidence from the source workflow.
-`codex_port_status` is deliberately not a pass: the 0.3 spec/run port needs fresh isolated Codex probes
-before new behavioral evidence can be claimed. `bash tests/run.sh` validates scenario structure and
-anchors only; it does not execute a model evaluation.
+`bash tests/run.sh` validates scenario structure and the model-runner contract with a deterministic
+fixture; it does not spend model calls. Run the two acceptance-critical live probes explicitly:
+
+```bash
+python3 tests/run_model_scenarios.py
+```
+
+The live runner supplies the current `run` skill and self-contained query to an ephemeral, read-only
+`codex exec`, requires structured output, and fails unless the visible-plan case calls `update_plan`
+before editing and the overlapping/dependent case remains serial under the parent. A structural pass
+is not behavioral evidence; record `codex_port_status` as passed only after this command succeeds.

@@ -11,6 +11,7 @@ TEST_TOOLS="$(mktemp -d)" || exit 1
 TEST_TOOLS="$(CDPATH='' cd -- "$TEST_TOOLS" && pwd -P)" || exit 1
 REVIEWER_ROOT="$TEST_TOOLS/codex-cc-triage"
 MARKER_FILE="$TEST_TOOLS/authoritative-marker"
+THREAD_FILE="$TEST_TOOLS/authoritative-thread"
 mkdir -p "$REVIEWER_ROOT/skills/claude-review" "$REVIEWER_ROOT/scripts"
 printf '%s\n' '--required CODEX_CC_REQUIRED_REVIEW APPROVE' > "$REVIEWER_ROOT/skills/claude-review/SKILL.md"
 cat > "$REVIEWER_ROOT/scripts/review-state.sh" <<'REVIEW_STATE_STUB'
@@ -18,7 +19,7 @@ cat > "$REVIEWER_ROOT/scripts/review-state.sh" <<'REVIEW_STATE_STUB'
 # Emits CODEX_CC_REQUIRED_REVIEW APPROVE only from this authoritative state stub.
 [ -z "${CODEX_CC_TRIAGE_STATE_DIR:-}" ] || exit 9
 [ -z "${CODEX_CC_TRIAGE_PYTHON_BIN:-}" ] || exit 9
-[ "$1" = check ] && [ "$2" = review-run-1 ] && cat "$CODEX_TEST_MARKER_FILE"
+[ "$1" = check ] && [ "$2" = "$(cat "$CODEX_TEST_THREAD_FILE")" ] && cat "$CODEX_TEST_MARKER_FILE"
 REVIEW_STATE_STUB
 chmod +x "$REVIEWER_ROOT/scripts/review-state.sh"
 cat > "$TEST_TOOLS/codex" <<'CODEX_STUB'
@@ -31,6 +32,7 @@ jq -n --arg root "$CODEX_TEST_REVIEWER_ROOT" '{installed:[{
 CODEX_STUB
 chmod +x "$TEST_TOOLS/codex"
 export CODEX_TEST_REVIEWER_ROOT="$REVIEWER_ROOT" CODEX_TEST_MARKER_FILE="$MARKER_FILE"
+export CODEX_TEST_THREAD_FILE="$THREAD_FILE"
 PATH="$TEST_TOOLS:$PATH"
 
 pass() { printf 'PASS %s\n' "$1"; }
@@ -132,11 +134,13 @@ claude_approval_marker() {
   tree="$(jq -r '.candidate.tree_sha' "$state")"
   base="$(jq -r '.base_sha' "$state")"
   spec="$(jq -r '.spec' "$state")"
-  printf 'CODEX_CC_REQUIRED_REVIEW APPROVE thread=review-run-1 head=%s tree=%s fingerprint=%064d base_sha=%s spec_path=%s\n' \
-    "$sha" "$tree" 1 "$base" "$spec"
+  thread="$(runctl reviewer-thread run-1)"
+  printf 'CODEX_CC_REQUIRED_REVIEW APPROVE thread=%s head=%s tree=%s fingerprint=%064d base_sha=%s spec_path=%s\n' \
+    "$thread" "$sha" "$tree" 1 "$base" "$spec"
 }
 
 claude_stub_agrees() {
+  runctl reviewer-thread run-1 > "$THREAD_FILE"
   claude_approval_marker > "$MARKER_FILE"
 }
 
@@ -169,6 +173,22 @@ if [ "$rc" -eq 0 ] && [ "$(jq -r '.spec' "$STATE")" = "docs/spec.md" ]; then
 else
   fail "spec-path-is-canonicalized" "rc=$rc spec=$(jq -r '.spec' "$STATE")"
 fi
+runctl init run-1 --mode auto >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && pass "run-requires-a-committed-spec" \
+  || fail "run-requires-a-committed-spec" "rc=$rc"
+runctl init run-1 --mode auto --mode interactive --spec docs/spec.md >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && pass "duplicate-init-mode-is-rejected" \
+  || fail "duplicate-init-mode-is-rejected" "rc=$rc"
+runctl init run-1 --mode auto --spec docs/spec.md --spec docs/spec.md >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && pass "duplicate-init-spec-is-rejected" \
+  || fail "duplicate-init-spec-is-rejected" "rc=$rc"
+jq '.spec = null' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+runctl init run-1 --mode auto --spec docs/spec.md >/dev/null 2>&1; rc=$?
+if [ "$rc" -eq 0 ] && [ "$(jq -r '.spec' "$STATE")" = docs/spec.md ]; then
+  pass "early-null-spec-state-is-migrated"
+else
+  fail "early-null-spec-state-is-migrated" "rc=$rc"
+fi
 
 SCHEMA="$DIR/../../schemas/run-state.schema.json"
 STATE_KEYS="$(jq -c 'keys | sort' "$STATE")"
@@ -178,6 +198,8 @@ SCHEMA_CI_KEYS="$(jq -c '.properties.ci.required | sort' "$SCHEMA")"
 if [ "$STATE_KEYS" = "$SCHEMA_KEYS" ] && [ "$STATE_CI_KEYS" = "$SCHEMA_CI_KEYS" ] \
     && jq -e '
       .properties.required_reviewers.const == ["owner-review","mattpocock","claude"] and
+      (.properties.run_id."$ref" | endswith("/runId")) and
+      (."$defs".runId.pattern | contains("{0,79}")) and
       (."$defs".task.properties.phase.enum | length) == 6 and
       (.properties.candidate.oneOf | length) == 2 and
       (.properties.ci.oneOf | length) == 3 and
@@ -308,6 +330,76 @@ done
 [ "$lock_race_ok" -eq 1 ] && pass "stale-init-lock-contention-is-serialized" \
   || fail "stale-init-lock-contention-is-serialized" "trial=$lock_race_trial successes=$successes active=$active"
 [ "$lock_race_ok" -eq 1 ] || rm -rf "$REPO" "$RESULTS"
+
+# A killed recovery owner cannot permanently brick or de-serialize initialization.
+reclaim_race_ok=1
+reclaim_trial=1
+while [ "$reclaim_trial" -le 10 ]; do
+  REPO="$(mktemp -d)" || exit 1
+  RESULTS="$(mktemp -d)" || exit 1
+  (
+    cd "$REPO" && git init -q -b main && git config user.email test@example.com \
+      && git config user.name test && mkdir -p docs && printf 'base\n' > file.txt \
+      && printf '# Spec\n' > docs/spec.md && git add file.txt docs/spec.md \
+      && git commit -qm init && git switch -qc task
+  ) || exit 1
+  for n in 1 2 3 4 5 6 7 8; do
+    EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$P" "orphan-$n" main --expected-branch task >/dev/null || exit 1
+  done
+  mkdir "$REPO/$RUNS_REL/.init.lock.reclaim"
+  printf '999999999999\n' > "$REPO/$RUNS_REL/.init.lock.reclaim/pid"
+  for n in 1 2 3 4 5 6 7 8; do
+    (runctl init "orphan-$n" --mode auto --spec docs/spec.md >/dev/null 2>&1; printf '%s\n' "$?" > "$RESULTS/$n") &
+  done
+  wait
+  successes="$(awk '$1 == 0 { total++ } END { print total + 0 }' "$RESULTS"/*)"
+  active="$(find "$REPO/$RUNS_REL" -type f -name '*.state.json' | wc -l | tr -d ' ')"
+  if [ "$successes" -ne 1 ] || [ "$active" -ne 1 ]; then reclaim_race_ok=0; break; fi
+  rm -rf "$REPO" "$RESULTS"
+  reclaim_trial=$((reclaim_trial + 1))
+done
+[ "$reclaim_race_ok" -eq 1 ] && pass "orphaned-init-reclaimer-is-recovered" \
+  || fail "orphaned-init-reclaimer-is-recovered" \
+    "trial=$reclaim_trial successes=$successes active=$active"
+[ "$reclaim_race_ok" -eq 1 ] || rm -rf "$REPO" "$RESULTS"
+
+# Reviewer threads stay within the peer contract and do not collide across linked worktrees.
+REPO="$(mktemp -d)" || exit 1
+WORKTREE="$(mktemp -d)" || exit 1
+rmdir "$WORKTREE" || exit 1
+(
+  cd "$REPO" && git init -q -b main && git config user.email test@example.com \
+    && git config user.name test && mkdir -p docs && printf 'base\n' > file.txt \
+    && printf '# Spec\n' > docs/spec.md && git add file.txt docs/spec.md \
+    && git commit -qm init && git switch -qc task-a \
+    && git worktree add -qb task-b "$WORKTREE" main
+) >/dev/null 2>&1 || exit 1
+LONG_RUN_ID="$(printf 'a%.0s' $(seq 1 80))"
+for checkout in "$REPO" "$WORKTREE"; do
+  branch="$(git -C "$checkout" branch --show-current)"
+  EXECUTE_TASK_PROJECT_DIR="$checkout" bash "$P" "$LONG_RUN_ID" main --expected-branch "$branch" >/dev/null || exit 1
+  EXECUTE_TASK_PROJECT_DIR="$checkout" bash "$R" init "$LONG_RUN_ID" --mode auto --spec docs/spec.md >/dev/null || exit 1
+done
+THREAD_A="$(EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$R" reviewer-thread "$LONG_RUN_ID")"
+THREAD_B="$(EXECUTE_TASK_PROJECT_DIR="$WORKTREE" bash "$R" reviewer-thread "$LONG_RUN_ID")"
+printf 'complete the first branch run later\n' \
+  | EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$R" block "$LONG_RUN_ID" >/dev/null || exit 1
+LONG_RUN_ID_TWO="$(printf 'a%.0s' $(seq 1 79))b"
+EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$P" "$LONG_RUN_ID_TWO" main --expected-branch task-a >/dev/null || exit 1
+EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$R" init "$LONG_RUN_ID_TWO" --mode auto --spec docs/spec.md >/dev/null || exit 1
+THREAD_C="$(EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$R" reviewer-thread "$LONG_RUN_ID_TWO")"
+THREAD_FORMAT_COUNT="$(printf '%s\n%s\n%s\n' "$THREAD_A" "$THREAD_B" "$THREAD_C" \
+  | grep -Ec '^review-[a-z0-9._-]+-[0-9a-f]{12}$')"
+if [ "${#THREAD_A}" -le 80 ] && [ "${#THREAD_B}" -le 80 ] \
+    && [ "${#THREAD_C}" -le 80 ] \
+    && [ "$THREAD_A" != "$THREAD_B" ] && [ "$THREAD_A" != "$THREAD_C" ] \
+    && [ "$THREAD_FORMAT_COUNT" -eq 3 ]; then
+  pass "reviewer-thread-is-bounded-and-run-unique"
+else
+  fail "reviewer-thread-is-bounded-and-run-unique" "a=$THREAD_A b=$THREAD_B c=$THREAD_C"
+fi
+git -C "$REPO" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
+rm -rf "$REPO"
 
 # Specs move from the planning area to the archive while implementation owns mutations. State
 # follows only a staged/committed relocation; a copy that leaves the old tracked path cannot pass.
@@ -495,14 +587,32 @@ else
 fi
 rm -rf "$REPO"
 
+# An in-repository TMPDIR must not become part of the worktree fingerprint.
+make_repo
+complete_readiness && create_plan || exit 1
+runctl task run-1 start implement-feature >/dev/null
+evidence "Implementation completed before stable snapshot" \
+  task run-1 complete implement-feature >/dev/null
+mkdir "$REPO/ambient-tmp"
+TMPDIR="$REPO/ambient-tmp" runctl phase run-1 complete implementation >/dev/null 2>&1; rc=$?
+SNAPSHOT="$(jq -r '[.gates[] | select(.id == "implementation-tree")][-1].tree_sha // empty' \
+  "$REPO/$RUNS_REL/run-1.state.json")"
+HEAD_TREE="$(git -C "$REPO" rev-parse HEAD^{tree})"
+if [ "$rc" -eq 0 ] && [ "$SNAPSHOT" = "$HEAD_TREE" ]; then
+  pass "in-repo-tmpdir-does-not-pollute-snapshot"
+else
+  fail "in-repo-tmpdir-does-not-pollute-snapshot" "rc=$rc snapshot=$SNAPSHOT head=$HEAD_TREE"
+fi
+rm -rf "$REPO"
+
 # An implementation snapshot failure must not advance the phase.
 make_repo
 complete_readiness && create_plan || exit 1
 runctl task run-1 start implement-feature >/dev/null
 evidence "Implementation completed before snapshot" \
   task run-1 complete implement-feature >/dev/null
-MISSING_TMP="$REPO/does-not-exist"
-TMPDIR="$MISSING_TMP" runctl phase run-1 complete implementation >/dev/null 2>&1; rc=$?
+MISSING_INDEX="$REPO/does-not-exist/index"
+GIT_INDEX_FILE="$MISSING_INDEX" runctl phase run-1 complete implementation >/dev/null 2>&1; rc=$?
 if [ "$rc" -eq 1 ] \
     && jq -e '.phase == {name:"implementation",status:"in_progress"} and
       all(.gates[]; .id != "implementation-tree")' \
@@ -585,6 +695,17 @@ jq '.fix_round = 0 | .completed_phases = ["readiness","planning","readiness"]' "
 runctl status run-1 >/dev/null 2>&1; rc=$?
 [ "$rc" -eq 1 ] && pass "duplicate-completed-phase-invalidates-state" \
   || fail "duplicate-completed-phase-invalidates-state" "rc=$rc"
+cp "$STATE" "$STATE.invalid"
+jq '.completed_phases = ["readiness","planning","implementation"] | .invalidations = [{}]' \
+  "$STATE.invalid" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+runctl status run-1 >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && pass "malformed-invalidation-invalidates-state" \
+  || fail "malformed-invalidation-invalidates-state" "rc=$rc"
+jq '.invalidations = [] | .created_at = "not-a-timestamp"' \
+  "$STATE.invalid" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+runctl status run-1 >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && pass "malformed-timestamp-invalidates-state" \
+  || fail "malformed-timestamp-invalidates-state" "rc=$rc"
 rm -rf "$REPO"
 
 # Delivery accepts CI and DoD only for the immutable reviewed candidate.
@@ -623,7 +744,8 @@ GH_STUB="$(mktemp -d)" || exit 1
 cat > "$GH_STUB/gh" <<'GH_STUB_SCRIPT'
 #!/usr/bin/env bash
 case "$1:$2" in
-  pr:view) printf '{"number":42,"state":"%s","headRefOid":"%s","baseRefName":"main","mergeCommit":{"oid":"merge-sha"}}\n' "${GH_TEST_PR_STATE:-OPEN}" "$GH_TEST_SHA" ;;
+  pr:view) printf '{"number":42,"state":"%s","headRefOid":"%s","headRefName":"%s","baseRefName":"%s","mergeCommit":{"oid":"merge-sha"}}\n' \
+    "${GH_TEST_PR_STATE:-OPEN}" "$GH_TEST_SHA" "${GH_TEST_HEAD:-task}" "${GH_TEST_BASE:-main}" ;;
   pr:checks)
     if [ "$GH_TEST_CHECKS" = none ]; then
       echo "no checks reported on the 'task' branch" >&2
@@ -642,6 +764,17 @@ evidence "checks passed on stale PR head" ci run-1 record success "$SHA" --pr 42
 [ "$rc" -eq 1 ] && pass "stale-pr-head-not-green" \
   || fail "stale-pr-head-not-green" "rc=$rc"
 export GH_TEST_SHA="$SHA"
+export GH_TEST_HEAD="wrong-task"
+export GH_TEST_BASE="main"
+evidence "checks passed for the wrong PR head branch" ci run-1 record success "$SHA" --pr 42 >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && pass "wrong-pr-head-branch-not-green" \
+  || fail "wrong-pr-head-branch-not-green" "rc=$rc"
+export GH_TEST_HEAD="task"
+export GH_TEST_BASE="wrong-base"
+evidence "checks passed for the wrong PR target" ci run-1 record success "$SHA" --pr 42 >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && pass "wrong-pr-target-not-green" \
+  || fail "wrong-pr-target-not-green" "rc=$rc"
+export GH_TEST_BASE="main"
 export GH_TEST_CHECKS='none'
 OUT="$(evidence "no required checks" ci run-1 record success "$SHA" --pr 42 2>&1)"; rc=$?
 { [ "$rc" -eq 1 ] && printf '%s' "$OUT" | grep -q 'no required checks configured on GitHub'; } \

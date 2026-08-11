@@ -91,6 +91,89 @@ execute_task_assert_single_link() {
   [ "$links" = "1" ] || execute_task_die "$label must have exactly one link: $path"
 }
 
+execute_task_lock_mtime_epoch() {
+  local path="$1" value
+  value="$(stat -c '%Y' "$path" 2>/dev/null)" && [ -n "$value" ] \
+    && { printf '%s\n' "$value"; return 0; }
+  stat -f '%m' "$path" 2>/dev/null
+}
+
+execute_task_lock_is_stale() {
+  local lock_dir="$1" owner now modified
+  owner="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+  case "$owner" in
+    '')
+      now="$(date +%s 2>/dev/null || true)"
+      modified="$(execute_task_lock_mtime_epoch "$lock_dir" 2>/dev/null || true)"
+      case "$now:$modified" in :*|*:|*[!0-9:]*) return 1 ;; esac
+      [ $((now - modified)) -gt 60 ]
+      ;;
+    0|0[0-9]*|*[!0-9]*) return 0 ;;
+    *)
+      [ "${#owner}" -le 12 ] || return 0
+      kill -0 "$owner" 2>/dev/null && return 1
+      return 0
+      ;;
+  esac
+}
+
+# Acquire a reclaim mutex and replace a stale generation without acting on a
+# pre-takeover sample. Return 0 when owned, 1 when busy, and 2 for unsafe state.
+execute_task_acquire_reclaim_lock() {
+  local reclaim_lock="$1" tries=0 sampled moved stale
+  while [ "$tries" -lt 100 ]; do
+    [ ! -L "$reclaim_lock" ] && { [ ! -e "$reclaim_lock" ] || [ -d "$reclaim_lock" ]; } \
+      || return 2
+    [ ! -L "$reclaim_lock/pid" ] \
+      && { [ ! -e "$reclaim_lock/pid" ] || [ -f "$reclaim_lock/pid" ]; } \
+      || return 2
+    [ ! -e "$reclaim_lock/pid" ] || execute_task_assert_single_link "$reclaim_lock/pid" "lock-recovery owner"
+    if mkdir "$reclaim_lock" 2>/dev/null; then
+      if (set -C; printf '%s\n' "$$" > "$reclaim_lock/pid") 2>/dev/null \
+          && [ "$(cat "$reclaim_lock/pid" 2>/dev/null || true)" = "$$" ]; then
+        return 0
+      fi
+      return 2
+    fi
+    if ! execute_task_lock_is_stale "$reclaim_lock"; then
+      tries=$((tries + 1))
+      sleep 0.01
+      continue
+    fi
+    sampled="$(cat "$reclaim_lock/pid" 2>/dev/null || true)"
+    stale="$reclaim_lock.stale.$$.$tries"
+    [ ! -e "$stale" ] && [ ! -L "$stale" ] || return 2
+    if ! mv "$reclaim_lock" "$stale" 2>/dev/null; then
+      tries=$((tries + 1))
+      sleep 0.01
+      continue
+    fi
+    moved="$(cat "$stale/pid" 2>/dev/null || true)"
+    if [ "$moved" != "$sampled" ]; then
+      # An empty moved generation was caught between mkdir and owner publish.
+      # Restoring it would strand a fresh ownerless directory after its creator
+      # fails to publish. Retire that interrupted generation and let contenders
+      # retry. A published generation is restored because its owner may already
+      # have entered the protected section.
+      if [ -z "$moved" ]; then
+        rmdir "$stale" 2>/dev/null || return 2
+      elif [ ! -e "$reclaim_lock" ] && [ ! -L "$reclaim_lock" ]; then
+        mv "$stale" "$reclaim_lock" 2>/dev/null || true
+      else
+        rm -f "$stale/pid" 2>/dev/null || true
+        rmdir "$stale" 2>/dev/null || true
+      fi
+      tries=$((tries + 1))
+      sleep 0.01
+      continue
+    fi
+    rm -f "$stale/pid" 2>/dev/null || true
+    rmdir "$stale" 2>/dev/null || return 2
+    tries=$((tries + 1))
+  done
+  return 1
+}
+
 execute_task_read_meta() {
   local key="$1" path="$2"
   awk -F= -v key="$key" '$1 == key {print substr($0, index($0, "=") + 1); exit}' "$path"
@@ -231,23 +314,20 @@ EOF
 # Build the tree represented by the complete working tree without touching the
 # user's index. The testing gate can therefore bind to the later candidate.
 execute_task_worktree_tree_sha() {
-  local real_index temporary_index tree
+  local real_index index_dir temporary_index tree
   real_index="$(git rev-parse --git-path index 2>/dev/null)" \
     || execute_task_die "cannot resolve Git index"
-  temporary_index="$(mktemp "${TMPDIR:-/tmp}/codex-tuner-index.XXXXXX")" \
+  case "$real_index" in /*) ;; *) real_index="$EXECUTE_TASK_ROOT/$real_index" ;; esac
+  index_dir="$(dirname -- "$real_index")"
+  [ ! -L "$index_dir" ] && [ -d "$index_dir" ] \
+    || execute_task_die "Git index directory is unsafe"
+  temporary_index="$(mktemp "$index_dir/codex-tuner-index.XXXXXX")" \
     || execute_task_die "cannot create temporary Git index"
-  if [ -f "$real_index" ]; then
-    cp "$real_index" "$temporary_index" || {
-      rm -f "$temporary_index"
-      execute_task_die "cannot copy Git index"
-    }
-  else
+  rm -f "$temporary_index"
+  GIT_INDEX_FILE="$temporary_index" git read-tree HEAD >/dev/null 2>&1 || {
     rm -f "$temporary_index"
-    GIT_INDEX_FILE="$temporary_index" git read-tree HEAD >/dev/null 2>&1 || {
-      rm -f "$temporary_index"
-      execute_task_die "cannot initialize temporary Git index"
-    }
-  fi
+    execute_task_die "cannot initialize temporary Git index"
+  }
   GIT_INDEX_FILE="$temporary_index" git add -A -- :/ >/dev/null 2>&1 || {
     rm -f "$temporary_index"
     execute_task_die "cannot snapshot working tree"

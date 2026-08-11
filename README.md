@@ -26,8 +26,10 @@ legacy `.codex/execute-task-runs/` path.
 
 The delivery gate verifies Claude approval against the state held by the single enabled
 `codex-cc-triage@codex-cc-triage` installation; pasted approval text is not authority. GitHub delivery
-also requires at least one required check on the target branch. Codex instructions and optional hooks
-are guardrails; candidate/tree, reviewer-state, CI, and merge-head checks are the runtime boundaries.
+uses a bounded branch-scoped reviewer thread, so equal run IDs in linked worktrees do not share review
+state. It also requires at least one required check on the target branch. Codex instructions and
+optional hooks are guardrails; candidate/tree, reviewer-state, CI, and merge-head checks are the
+runtime boundaries.
 
 ## Install
 
@@ -74,7 +76,8 @@ bash tests/run.sh
 
 CI runs the same suite on Ubuntu and macOS. Structure validation also enforces the current
 [OpenAI plugin submission contract](https://developers.openai.com/plugins/deploy/submission-errors).
-Releases are maintained by release-please; do not hand-edit version fields independently.
+PR titles must be Conventional Commit subjects because squash merges feed release-please. Releases
+are maintained by release-please; do not hand-edit version fields independently.
 
 ## License
 

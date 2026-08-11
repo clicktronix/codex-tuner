@@ -117,6 +117,7 @@ need "run-current-sha-ci" 'record success <candidate-sha> --pr <literal-pr-numbe
 need "run-reconciliation" '<literal merged PR, issue/board, spec/archive, and cleanup evidence>' "$RUN"
 need "run-prereq-check" 'scripts/execute-task/prereq-check.sh' "$RUN"
 need "run-claude-review" '$codex-cc-triage:claude-review --required --base <literal-base-sha>' "$RUN"
+need "run-branch-scoped-review-thread" 'reviewer-thread <literal-run-id>' "$RUN"
 need "run-claude-marker" 'CODEX_CC_REQUIRED_REVIEW APPROVE' "$RUN"
 need "run-matt-review" 'Invoke `$code-review` with the fixed base' "$RUN"
 need "run-visible-plan" '`update_plan` with:' "$RUN"
@@ -138,6 +139,7 @@ need "release-pr-fails-workflow" '[ "$state" = success ]' "$RELEASE_WORKFLOW"
 need "release-pr-create-update-gate" 'sets prs_created when a release PR is created or updated' "$RELEASE_WORKFLOW"
 need "release-checkout-current" 'uses: actions/checkout@v7' "$RELEASE_WORKFLOW"
 need "validate-checkout-current" 'uses: actions/checkout@v7' "$VALIDATE_WORKFLOW"
+need "validate-conventional-pr-title" 'bash tests/check_pr_title.sh "$PR_TITLE"' "$VALIDATE_WORKFLOW"
 release_action_is_current "$RELEASE_WORKFLOW" \
   && echo "PASS release-action-node24" \
   || { echo "FAIL release-action-node24"; failures=1; }

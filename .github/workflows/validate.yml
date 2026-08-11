@@ -6,6 +6,16 @@ on:
     branches: [main]
 
 jobs:
+  conventional-pr-title:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate squash-commit subject
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: bash tests/check_pr_title.sh "$PR_TITLE"
+
   validate:
     strategy:
       fail-fast: false

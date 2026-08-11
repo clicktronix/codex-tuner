@@ -13,8 +13,9 @@ LOCK_DIRS=""
 
 usage() {
   cat >&2 <<'EOF'
-usage: runctl.sh init <run-id> [--mode interactive|auto] [--spec <path>]
+usage: runctl.sh init <run-id> [--mode interactive|auto] --spec <path>
        runctl.sh status <run-id>
+       runctl.sh reviewer-thread <run-id>
        runctl.sh spec <run-id> relocate <repo-relative-new-path>
        runctl.sh phase <run-id> enter <phase>
        runctl.sh phase <run-id> complete [<phase>]
@@ -36,11 +37,14 @@ EOF
 }
 
 cleanup_lock() {
-  local lock_dir owner
+  local lock_dir owner links
   [ -n "$LOCK_DIRS" ] || return
   while IFS= read -r lock_dir; do
     [ -n "$lock_dir" ] || continue
-    [ ! -L "$lock_dir" ] && [ -d "$lock_dir" ] && [ ! -L "$lock_dir/pid" ] || continue
+    [ ! -L "$lock_dir" ] && [ -d "$lock_dir" ] \
+      && [ ! -L "$lock_dir/pid" ] && [ -f "$lock_dir/pid" ] || continue
+    links="$(execute_task_link_count "$lock_dir/pid" 2>/dev/null || true)"
+    [ "$links" = 1 ] || continue
     owner="$(cat "$lock_dir/pid" 2>/dev/null || true)"
     [ "$owner" = "$$" ] || continue
     rm -f "$lock_dir/pid" 2>/dev/null || true
@@ -136,7 +140,7 @@ assert_repo_regular_tracked() {
 
 validate_claude_approval_evidence() {
   local marker marker_count word1 word2 thread_field head_field tree_field fp_field
-  local base_field spec_field extra fingerprint candidate_tree base_sha spec_path
+  local base_field spec_field extra fingerprint candidate_tree base_sha spec_path review_thread
   marker_count="$(printf '%s\n' "$EVIDENCE" | grep -c '^CODEX_CC_REQUIRED_REVIEW APPROVE ' || true)"
   [ "$marker_count" -eq 1 ] \
     || execute_task_die "Claude APPROVE evidence must contain exactly one required-review marker"
@@ -147,13 +151,14 @@ EOF
   candidate_tree="$(jq -r '.candidate.tree_sha // empty' "$STATE")"
   base_sha="$(jq -r '.base_sha' "$STATE")"
   spec_path="$(jq -r '.spec // empty' "$STATE")"
+  review_thread="$(review_thread_name)"
   case "$fp_field" in
     fingerprint=*) fingerprint="${fp_field#fingerprint=}" ;;
     *) execute_task_die "Claude required-review marker has an invalid fingerprint field" ;;
   esac
   [ "$word1" = "CODEX_CC_REQUIRED_REVIEW" ] \
     && [ "$word2" = "APPROVE" ] \
-    && [ "$thread_field" = "thread=review-$EXECUTE_TASK_RUN_ID" ] \
+    && [ "$thread_field" = "thread=$review_thread" ] \
     && [ "$head_field" = "head=$SHA" ] \
     && [ "$tree_field" = "tree=$candidate_tree" ] \
     && [ "$base_field" = "base_sha=$base_sha" ] \
@@ -169,15 +174,27 @@ EOF
 }
 
 verify_claude_required_review() {
-  local marker="$1" plugin_root authoritative
+  local marker="$1" plugin_root authoritative review_thread
+  review_thread="$(review_thread_name)"
   plugin_root="$(execute_task_claude_plugin_root)" \
     || execute_task_die "cannot locate the single enabled codex-cc-triage required-review installation"
   authoritative="$(env -u CODEX_CC_TRIAGE_STATE_DIR -u CODEX_CC_TRIAGE_PYTHON_BIN \
     CODEX_CC_TRIAGE_PROJECT_DIR="$EXECUTE_TASK_ROOT" \
-    bash "$plugin_root/scripts/review-state.sh" check "review-$EXECUTE_TASK_RUN_ID" 2>/dev/null)" \
-    || execute_task_die "codex-cc-triage reports no gate-eligible approval for thread 'review-$EXECUTE_TASK_RUN_ID'"
+    bash "$plugin_root/scripts/review-state.sh" check "$review_thread" 2>/dev/null)" \
+    || execute_task_die "codex-cc-triage reports no gate-eligible approval for thread '$review_thread'"
   [ "$authoritative" = "$marker" ] \
-    || execute_task_die "recorded Claude marker does not match codex-cc-triage state for 'review-$EXECUTE_TASK_RUN_ID'"
+    || execute_task_die "recorded Claude marker does not match codex-cc-triage state for '$review_thread'"
+}
+
+review_thread_name() {
+  local branch identity_hash run_component
+  branch="$(jq -r '.branch' "$STATE")"
+  identity_hash="$(printf 'run=%s\nbranch=%s\n' "$EXECUTE_TASK_RUN_ID" "$branch" \
+    | git hash-object --stdin 2>/dev/null)" \
+    || execute_task_die "cannot derive reviewer thread identity"
+  case "$identity_hash" in ''|*[!0-9a-f]*) execute_task_die "invalid reviewer thread identity" ;; esac
+  run_component="$(printf '%s' "$EXECUTE_TASK_RUN_ID" | cut -c1-60)"
+  printf 'review-%s-%s\n' "$run_component" "$(printf '%s' "$identity_hash" | cut -c1-12)"
 }
 
 validate_same_candidate_reconsideration() {
@@ -227,9 +244,13 @@ validate_state_shape() {
     --arg branch "$stored_branch" \
     --arg target "$stored_target" \
     --arg base "$stored_base" '
+      def run_id: type == "string" and test("^[a-z0-9][a-z0-9._-]{0,79}$");
       def id: type == "string" and test("^[a-z0-9][a-z0-9._-]{0,119}$");
       def sha: type == "string" and test("^[0-9a-fA-F]{40}([0-9a-fA-F]{24})?$");
       def nullable_sha: . == null or sha;
+      def timestamp:
+        type == "string" and
+        test("^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$");
       keys == ["base_sha", "blocked_reason", "branch", "candidate", "ci", "completed_at",
         "completed_phases", "completion_evidence", "created_at", "fix_round", "gates", "invalidations",
         "mode", "phase", "required_reviewers",
@@ -237,9 +258,14 @@ validate_state_shape() {
         "target_sha", "tasks", "updated_at"] and
       .schema_version == 1 and
       .run_id == $run and .branch == $branch and .target_ref == $target and .base_sha == $base and
-      (.run_id | id) and (.target_sha | sha) and
-      (.spec == null or (.spec | type == "string" and test("^[a-zA-Z0-9_./-]+$") and
-        (startswith("./") | not))) and
+      (.run_id | run_id) and
+      (.branch | type == "string" and length > 0) and
+      (.target_ref | type == "string" and length > 0) and
+      (.base_sha | type == "string" and length > 0) and
+      (.target_sha | sha) and
+      (.spec | type == "string" and test("^[a-zA-Z0-9_./-]+$") and
+        (startswith("./") | not)) and
+      (.created_at | timestamp) and (.updated_at | timestamp) and
       (.mode == "interactive" or .mode == "auto") and
       (.status == "active" or .status == "blocked" or .status == "completed") and
       (if .status == "blocked" then (.blocked_reason | type == "string" and length > 0)
@@ -247,13 +273,13 @@ validate_state_shape() {
       (if .status == "completed" then
         .phase == {name: "done", status: "completed"} and
         (.completion_evidence | type == "string" and length > 0) and
-        (.completed_at | type == "string" and length > 0)
+        (.completed_at | timestamp)
        else .phase.name != "done" and .completion_evidence == null and .completed_at == null end) and
       (.phase | keys == ["name", "status"]) and
       (.phase.name as $phase | ["readiness", "planning", "implementation", "testing", "acceptance",
         "candidate", "review", "delivery", "done"] | index($phase) != null) and
       (.phase.status == "in_progress" or .phase.status == "completed") and
-      (.completed_phases | type == "array") and
+      (.completed_phases | type == "array" and all(.[]; type == "string")) and
       (.completed_phases | unique | length) == (.completed_phases | length) and
       (.tasks | type == "array") and
       ([.tasks[].id] | unique | length) == (.tasks | length) and
@@ -264,6 +290,10 @@ validate_state_shape() {
       ([.reviews[].reviewer] | sort) == ([.required_reviewers[]] | sort) and
       (.review_history | type == "array") and
       (.invalidations | type == "array") and
+      all(.invalidations[];
+        keys == ["at", "candidate_sha", "reason"] and
+        (.at | timestamp) and (.candidate_sha | nullable_sha) and
+        (.reason | type == "string" and length > 0)) and
       (.fix_round | type == "number" and . >= 0 and . <= 999999 and floor == .) and
       all(.tasks[];
         keys == ["description", "evidence", "id", "phase", "status", "updated_at"] and
@@ -271,20 +301,24 @@ validate_state_shape() {
         (.phase as $task_phase | ["implementation", "testing", "acceptance", "candidate", "review",
           "delivery"] | index($task_phase) != null) and
         (.status as $task_status | ["pending", "in_progress", "blocked", "completed"] |
-          index($task_status) != null)) and
+          index($task_status) != null) and
+        (.evidence == null or (.evidence | type == "string")) and (.updated_at | timestamp)) and
       all(.gates[];
         keys == ["evidence", "id", "recorded_at", "sha", "status", "tree_sha"] and
         (.id | id) and (.sha | nullable_sha) and (.tree_sha | nullable_sha) and
-        (.status == "pass" or .status == "fail") and (.evidence | type == "string" and length > 0)) and
+        (.status == "pass" or .status == "fail") and
+        (.evidence | type == "string" and length > 0) and (.recorded_at | timestamp)) and
       all(.reviews[], .review_history[];
         keys == ["evidence", "recorded_at", "reviewer", "sha", "verdict"] and
         (.reviewer | id) and (.sha | nullable_sha) and
-        (.verdict as $verdict | ["PENDING", "APPROVE", "REQUEST_CHANGES"] | index($verdict) != null)) and
+        (.verdict as $verdict | ["PENDING", "APPROVE", "REQUEST_CHANGES"] | index($verdict) != null) and
+        (.evidence == null or (.evidence | type == "string")) and
+        (.recorded_at == null or (.recorded_at | timestamp))) and
       (.candidate | keys == ["recorded_at", "sha", "tree_sha"]) and
       (.candidate.sha | nullable_sha) and (.candidate.tree_sha | nullable_sha) and
       ((.candidate.sha == null and .candidate.tree_sha == null and .candidate.recorded_at == null) or
         (.candidate.sha != null and .candidate.tree_sha != null and
-          (.candidate.recorded_at | type == "string" and length > 0))) and
+          (.candidate.recorded_at | timestamp))) and
       (.ci | keys == ["evidence", "pr_number", "recorded_at", "sha", "status"]) and
       (.ci.sha | nullable_sha) and
       (.ci.pr_number == null or
@@ -293,7 +327,7 @@ validate_state_shape() {
       (if .ci.status == "pending" then
         .ci.sha == null and .ci.pr_number == null and .ci.evidence == null and .ci.recorded_at == null
        else .ci.sha != null and (.ci.evidence | type == "string" and length > 0) and
-        (.ci.recorded_at | type == "string" and length > 0) and
+        (.ci.recorded_at | timestamp) and
         (if .ci.status == "success" then .ci.pr_number != null else .ci.pr_number == null end) end)
     ' "$checked_state" >/dev/null 2>&1
 }
@@ -312,17 +346,15 @@ acquire_lock() {
       || execute_task_die "invalid $label lock path"
     [ ! -L "$lock_path/pid" ] \
       || execute_task_die "refusing symlinked $label lock owner"
+    [ ! -e "$lock_path/pid" ] || [ -f "$lock_path/pid" ] \
+      || execute_task_die "$label lock owner is not a regular file"
+    [ ! -e "$lock_path/pid" ] \
+      || execute_task_assert_single_link "$lock_path/pid" "$label lock owner"
   done
 
-  # Serialize acquisition and stale-generation replacement. A killed reclaimer fails closed.
-  mkdir "$reclaim_lock" 2>/dev/null \
-    || execute_task_die "$label lock recovery is held by another process"
-  if ! (set -C; printf '%s\n' "$$" > "$reclaim_lock/pid") 2>/dev/null \
-      || [ "$(cat "$reclaim_lock/pid" 2>/dev/null || true)" != "$$" ]; then
-    [ -L "$reclaim_lock/pid" ] || rm -f "$reclaim_lock/pid" 2>/dev/null || true
-    rmdir "$reclaim_lock" 2>/dev/null || true
-    execute_task_die "cannot own $label lock recovery"
-  fi
+  # Serialize acquisition and recover an orphaned recovery generation safely.
+  execute_task_acquire_reclaim_lock "$reclaim_lock" \
+    || execute_task_die "$label lock recovery is held by another process or unsafe"
   LOCK_DIRS="${LOCK_DIRS}${LOCK_DIRS:+
 }$reclaim_lock"
 
@@ -403,6 +435,26 @@ update_state() {
   }
 }
 
+migrate_early_missing_spec() {
+  local spec="$1" now temporary
+  jq -e '.schema_version == 1 and .spec == null and
+    .phase == {name: "readiness", status: "in_progress"} and
+    (.completed_phases | length) == 0 and (.tasks | length) == 0 and (.gates | length) == 0' \
+    "$STATE" >/dev/null 2>&1 || return 0
+  now="$(date -u +%FT%TZ)"
+  temporary="$(mktemp "$STATE.tmp.XXXXXX")" \
+    || execute_task_die "cannot create missing-spec migration state"
+  if ! jq --arg spec "$spec" --arg updated_at "$now" \
+      '.spec = $spec | .updated_at = $updated_at' "$STATE" > "$temporary" \
+      || ! validate_state_shape "$temporary"; then
+    rm -f "$temporary"
+    execute_task_die "cannot migrate an early run that predates mandatory --spec"
+  fi
+  chmod 600 "$temporary" 2>/dev/null || true
+  mv "$temporary" "$STATE" \
+    || { rm -f "$temporary"; execute_task_die "cannot install missing-spec migration"; }
+}
+
 assert_active() {
   local status
   status="$(jq -r '.status' "$STATE")"
@@ -457,16 +509,19 @@ assert_reviews_approved() {
 }
 
 verify_hosted_ci() {
-  local candidate pr_number pr_json checks_json checks_error final_pr_json
+  local candidate pr_number branch target pr_json checks_json checks_error final_pr_json
   candidate="${1:-$(jq -r '.candidate.sha // empty' "$STATE")}"
   pr_number="${2:-$(jq -r '.ci.pr_number // empty' "$STATE")}"
   [ -n "$candidate" ] && [ -n "$pr_number" ] \
     || execute_task_die "successful CI is not bound to a candidate PR"
+  branch="$(jq -r '.branch' "$STATE")"
+  target="$(jq -r '.target_ref' "$STATE")"
   command -v gh >/dev/null 2>&1 || execute_task_die "gh is required to verify hosted CI"
-  pr_json="$(gh pr view "$pr_number" --json number,state,headRefOid 2>/dev/null)" \
+  pr_json="$(gh pr view "$pr_number" --json number,state,headRefOid,headRefName,baseRefName 2>/dev/null)" \
     || execute_task_die "cannot read PR #$pr_number for CI verification"
-  jq -e --arg sha "$candidate" --argjson number "$pr_number" \
-    '.number == $number and .state == "OPEN" and .headRefOid == $sha' \
+  jq -e --arg sha "$candidate" --arg branch "$branch" --arg base "$target" --argjson number "$pr_number" \
+    '.number == $number and .state == "OPEN" and .headRefOid == $sha and
+      .headRefName == $branch and .baseRefName == $base' \
     >/dev/null 2>&1 <<EOF \
     || execute_task_die "PR #$pr_number is not open at candidate $candidate"
 $pr_json
@@ -486,10 +541,11 @@ EOF
     || execute_task_die "PR #$pr_number has missing, pending, skipped, cancelled, or failed required checks"
 $checks_json
 EOF
-  final_pr_json="$(gh pr view "$pr_number" --json number,state,headRefOid 2>/dev/null)" \
+  final_pr_json="$(gh pr view "$pr_number" --json number,state,headRefOid,headRefName,baseRefName 2>/dev/null)" \
     || execute_task_die "cannot re-read PR #$pr_number after CI verification"
-  jq -e --arg sha "$candidate" --argjson number "$pr_number" \
-    '.number == $number and .state == "OPEN" and .headRefOid == $sha' \
+  jq -e --arg sha "$candidate" --arg branch "$branch" --arg base "$target" --argjson number "$pr_number" \
+    '.number == $number and .state == "OPEN" and .headRefOid == $sha and
+      .headRefName == $branch and .baseRefName == $base' \
     >/dev/null 2>&1 <<EOF \
     || execute_task_die "PR #$pr_number moved while required checks were verified"
 $final_pr_json
@@ -504,11 +560,12 @@ verify_merged_pr() {
   [ -n "$candidate" ] && [ -n "$pr_number" ] \
     || execute_task_die "completed delivery is not bound to a candidate PR"
   command -v gh >/dev/null 2>&1 || execute_task_die "gh is required to verify the merged PR"
-  pr_json="$(gh pr view "$pr_number" --json number,state,headRefOid,baseRefName,mergeCommit 2>/dev/null)" \
+  pr_json="$(gh pr view "$pr_number" --json number,state,headRefOid,headRefName,baseRefName,mergeCommit 2>/dev/null)" \
     || execute_task_die "cannot read merged PR #$pr_number"
-  jq -e --arg sha "$candidate" --arg base "$target" --argjson number "$pr_number" '
+  jq -e --arg sha "$candidate" --arg head "$(jq -r '.branch' "$STATE")" --arg base "$target" --argjson number "$pr_number" '
     .number == $number and .state == "MERGED" and .headRefOid == $sha and
-    .baseRefName == $base and (.mergeCommit.oid | type == "string" and length > 0)
+    .headRefName == $head and .baseRefName == $base and
+    (.mergeCommit.oid | type == "string" and length > 0)
   ' >/dev/null 2>&1 <<EOF \
     || execute_task_die "PR #$pr_number is not a merged delivery of candidate $candidate into $target"
 $pr_json
@@ -660,43 +717,47 @@ case "$SUBCOMMAND" in
     MODE="interactive"
     MODE_SET=0
     SPEC=""
+    SPEC_SET=0
     while [ "$#" -gt 0 ]; do
       case "$1" in
         --mode)
           [ "$#" -ge 2 ] || execute_task_die "--mode requires a value"
+          [ "$MODE_SET" -eq 0 ] || execute_task_die "--mode may be provided only once"
           MODE="$2"; MODE_SET=1; shift
           ;;
         --spec)
           [ "$#" -ge 2 ] || execute_task_die "--spec requires a value"
-          SPEC="$2"; shift
+          [ "$SPEC_SET" -eq 0 ] || execute_task_die "--spec may be provided only once"
+          SPEC="$2"; SPEC_SET=1; shift
           ;;
         *) execute_task_die "unknown init option '$1'" ;;
       esac
       shift
     done
     case "$MODE" in interactive|auto) ;; *) execute_task_die "mode must be interactive or auto" ;; esac
+    [ "$SPEC_SET" -eq 1 ] && [ -n "$SPEC" ] \
+      || execute_task_die "--spec <repo-relative-path> is required"
     state_paths "$RUN_ID"
     lock_state
     lock_initialization
     assert_no_other_active_run
     [ -f "$JOURNAL" ] || execute_task_die "journal not found for run '$EXECUTE_TASK_RUN_ID'; run preflight first"
-    if [ -n "$SPEC" ]; then
-      SPEC="$(canonical_review_spec_path "$SPEC")"
-      validate_review_spec_path "$SPEC"
-      assert_repo_regular_tracked "spec" "$SPEC"
-    fi
+    SPEC="$(canonical_review_spec_path "$SPEC")"
+    validate_review_spec_path "$SPEC"
+    assert_repo_regular_tracked "spec" "$SPEC"
     if [ -f "$STATE" ]; then
+      migrate_early_missing_spec "$SPEC"
       load_state
       current_mode="$(jq -r '.mode' "$STATE")"
       current_spec="$(jq -r '.spec // empty' "$STATE")"
       [ "$MODE_SET" -eq 1 ] || MODE="$current_mode"
-      if [ "$current_mode" != "$MODE" ] || { [ -n "$SPEC" ] && [ "$current_spec" != "$SPEC" ]; }; then
+      if [ "$current_mode" != "$MODE" ] || [ "$current_spec" != "$SPEC" ]; then
         jq -e '.phase.name == "readiness" and .phase.status == "in_progress" and
           (.completed_phases | length) == 0 and (.tasks | length) == 0 and (.gates | length) == 0' \
           "$STATE" >/dev/null 2>&1 \
           || execute_task_die "mode/spec cannot change after run progress exists"
         load_state
-        update_state '.mode = $mode | if ($spec | length) > 0 then .spec = $spec else . end' \
+        update_state '.mode = $mode | .spec = $spec' \
           --arg mode "$MODE" --arg spec "$SPEC"
       fi
       printf '%s\n' "$EXECUTE_TASK_RUNS_REL/$EXECUTE_TASK_RUN_ID.state.json"
@@ -720,7 +781,7 @@ case "$SUBCOMMAND" in
         blocked_reason: null,
         completion_evidence: null,
         completed_at: null,
-        spec: (if ($spec | length) == 0 then null else $spec end),
+        spec: $spec,
         branch: $branch,
         target_ref: $target,
         target_sha: $target_sha,
@@ -750,6 +811,12 @@ case "$SUBCOMMAND" in
     [ "$#" -eq 2 ] || usage
     state_paths "$2"; load_state
     jq . "$STATE"
+    ;;
+
+  reviewer-thread)
+    [ "$#" -eq 2 ] || usage
+    state_paths "$2"; load_state
+    review_thread_name
     ;;
 
   spec)

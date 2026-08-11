@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -36,6 +37,9 @@ def main() -> int:
             encoding="utf-8"
         )
     )
+    run_skill_sha256 = hashlib.sha256(
+        (root / "plugins" / "codex-tuner" / "skills" / "run" / "SKILL.md").read_bytes()
+    ).hexdigest()
     failures = 0
 
     for scenario_path in sorted((root / "tests" / "scenarios").glob("*.json")):
@@ -81,6 +85,12 @@ def main() -> int:
                     f"{scenario_path.name}: must probe Codex update_plan semantics"
                 )
                 failures += 1
+            if port_status.get("status") != "live isolated model probe passed" \
+                    or "run_model_scenarios.py visible-plan-before-edit" \
+                    not in port_status.get("command", "") \
+                    or port_status.get("skill_sha256") != run_skill_sha256:
+                fail(f"{scenario_path.name}: missing current live-probe evidence")
+                failures += 1
 
         if scenario_path.name == "overlapping-implementation-stays-serial.json":
             query = str(scenario.get("query", "")).lower()
@@ -90,6 +100,12 @@ def main() -> int:
                     f"{scenario_path.name}: must probe overlapping dependent units "
                     "remaining serial"
                 )
+                failures += 1
+            if port_status.get("status") != "live isolated model probe passed" \
+                    or "run_model_scenarios.py overlapping-implementation-stays-serial" \
+                    not in port_status.get("command", "") \
+                    or port_status.get("skill_sha256") != run_skill_sha256:
+                fail(f"{scenario_path.name}: missing current live-probe evidence")
                 failures += 1
 
         if scenario_path.name == "sensitive-small-diff-skip.json":

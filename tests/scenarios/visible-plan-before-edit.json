@@ -15,9 +15,13 @@
     "Does not mark future phases complete before evidence exists"
   ],
   "codex_port_status": {
-    "date": "2026-08-09",
+    "date": "2026-08-11",
     "contract_version": "2.0.0",
-    "status": "structurally ported; fresh isolated model probe required",
-    "note": "Mirrors the shared lifecycle contract; no stale model-pass claim is carried forward."
+    "status": "live isolated model probe passed",
+    "cli": "codex-cli 0.147.0",
+    "model": "Codex CLI built-in default",
+    "skill_sha256": "23e85ceab58ecfd72ecf15c5d0fb15cf1675f081cbcf813a27ee447987ce6419",
+    "command": "python3 tests/run_model_scenarios.py visible-plan-before-edit",
+    "note": "The model selected update_plan before editing; the deterministic suite separately mutation-tests the runner."
   }
 }
