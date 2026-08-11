@@ -1,0 +1,23 @@
+{
+  "skills": [
+    "run"
+  ],
+  "tests_reference": "plugins/codex-tuner/skills/run/SKILL.md#phase-6--exact-candidate-review",
+  "query": "Self-contained simulation; do not read the filesystem. Commit A was approved. A review finding then caused a code fix and commit B. Tests for B pass, but no reviewer has reviewed B. Is the old approval sufficient?",
+  "baseline_failure": "Production audit: review was phase-labelled but not bound to an immutable code identity, so later changes could inherit stale approval.",
+  "expected_behavior": [
+    "Invalidates approval for A after the tree changes",
+    "Runs the complete review again for B",
+    "Records candidate SHA and tree SHA in the new verdict"
+  ],
+  "anti_expectation": [
+    "Does not rely on similar diff size or passing tests to reuse approval",
+    "Does not review an uncommitted moving worktree"
+  ],
+  "codex_port_status": {
+    "date": "2026-08-09",
+    "contract_version": "2.0.0",
+    "status": "structurally ported; fresh isolated model probe required",
+    "note": "Mirrors the shared lifecycle contract; no stale model-pass claim is carried forward."
+  }
+}

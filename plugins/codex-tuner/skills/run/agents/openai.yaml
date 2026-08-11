@@ -1,7 +1,7 @@
 interface:
   display_name: "Run Specification"
-  short_description: "Execute a committed spec through merge"
-  default_prompt: "Use $codex-tuner:run to execute this committed specification through verified delivery."
+  short_description: "Run a spec through exact-SHA delivery"
+  default_prompt: "Use $codex-tuner:run to publish a plan and execute this committed spec through tested, exact-SHA reviewed delivery."
 policy:
   products:
     - "CODEX"

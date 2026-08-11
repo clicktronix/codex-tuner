@@ -1,0 +1,23 @@
+{
+  "skills": [
+    "run"
+  ],
+  "tests_reference": "plugins/codex-tuner/skills/run/SKILL.md#phase-0--readiness",
+  "query": "Self-contained simulation; do not read the filesystem. A bug spec lists acceptance criteria and says only `run tests` under verification. It does not name the regression test, the exact command, expected failure, environment, fixtures, or a negative/mutation proof. May /run start implementation?",
+  "baseline_failure": "Production audit: the workflow mentioned DoR/DoD historically but the active spec template omitted the first failing check and execution began without a testable baseline.",
+  "expected_behavior": [
+    "Refuses implementation because Definition of Ready is incomplete",
+    "Requires an exact first failing check and the failure that proves the gap",
+    "Requires targeted/full commands plus environment and test data"
+  ],
+  "anti_expectation": [
+    "Does not invent missing commands during unattended execution",
+    "Does not accept a generic `run tests` placeholder"
+  ],
+  "codex_port_status": {
+    "date": "2026-08-09",
+    "contract_version": "2.0.0",
+    "status": "structurally ported; fresh isolated model probe required",
+    "note": "Mirrors the shared lifecycle contract; no stale model-pass claim is carried forward."
+  }
+}

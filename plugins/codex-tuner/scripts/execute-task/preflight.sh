@@ -67,6 +67,7 @@ if [ -e "$JOURNAL" ] || [ -e "$META" ]; then
   STORED_TARGET="$(execute_task_read_meta target_ref "$META")"
   [ "$STORED_TARGET" = "$TARGET" ] \
     || execute_task_die "run '$EXECUTE_TASK_RUN_ID' targets '$STORED_TARGET', not '$TARGET'"
+  execute_task_assert_single_link "$JOURNAL" "run journal"
   {
     echo
     echo "## restarted: $(date -u +%FT%TZ) (branch $BRANCH, base $BASE_SHA)"

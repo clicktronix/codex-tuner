@@ -30,11 +30,32 @@ REPO="$(mktemp -d)" || exit 1
 ) || exit 1
 
 EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/preflight.sh" run-1 main --expected-branch task >/dev/null
-EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/journal.sh" append run-1 "focused tests passed"
+printf '%s\n' "focused tests passed" \
+  | EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/journal.sh" append run-1
 if grep -q "focused tests passed" "$REPO/$STATE_REL/execute-task-runs/run-1.md"; then
   echo "PASS append"
 else
   echo "FAIL append"
+  failures=1
+fi
+
+MARKER="$REPO/journal-command-substitution-ran"
+printf 'literal `touch %s` and $(touch %s)\n' "$MARKER" "$MARKER" \
+  | EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/journal.sh" append run-1 >/dev/null 2>&1
+if [ ! -e "$MARKER" ] \
+  && grep -qF 'literal `touch' "$REPO/$STATE_REL/execute-task-runs/run-1.md" \
+  && grep -qF '$(touch' "$REPO/$STATE_REL/execute-task-runs/run-1.md"; then
+  echo "PASS append-stdin-preserves-shell-syntax"
+else
+  echo "FAIL append-stdin-preserves-shell-syntax"
+  failures=1
+fi
+
+OUT="$(EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/journal.sh" append run-1 "legacy message" 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] && printf '%s' "$OUT" | grep -q 'deprecated'; then
+  echo "PASS append-argv-compatibility-warning"
+else
+  echo "FAIL append-argv-compatibility-warning (rc=$rc out=$OUT)"
   failures=1
 fi
 
@@ -56,6 +77,22 @@ else
   echo "FAIL read"
   failures=1
 fi
+
+JOURNAL="$REPO/$STATE_REL/execute-task-runs/run-1.md"
+mv "$JOURNAL" "$JOURNAL.safe"
+ln "$REPO/file.txt" "$JOURNAL"
+VICTIM_BEFORE="$(cat "$REPO/file.txt")"
+printf 'must not write through a hard link\n' \
+  | EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/journal.sh" append run-1 >/dev/null 2>&1
+rc=$?
+if [ "$rc" -eq 1 ] && [ "$(cat "$REPO/file.txt")" = "$VICTIM_BEFORE" ]; then
+  echo "PASS append-refuses-hard-linked-journal"
+else
+  echo "FAIL append-refuses-hard-linked-journal (rc=$rc)"
+  failures=1
+fi
+rm -f "$JOURNAL"
+mv "$JOURNAL.safe" "$JOURNAL"
 
 for i in 1 2 3 4 5 6 7 8; do
   EXECUTE_TASK_PROJECT_DIR="$REPO" bash "$SCRIPTS/journal.sh" append run-1 "entry $i" >/dev/null

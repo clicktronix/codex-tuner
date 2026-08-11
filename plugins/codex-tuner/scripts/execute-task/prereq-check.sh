@@ -1,10 +1,23 @@
 #!/usr/bin/env bash
 # Verify companion skills/plugins required by spec and run.
-# CODEX_TUNER_SKILLS_ROOTS, CODEX_TUNER_PLUGIN_LIST_FILE, and
-# CODEX_TUNER_CLAUDE_BIN and CODEX_TUNER_CLAUDE_AUTH_FILE are test overrides.
+# CODEX_TUNER_SKILLS_ROOTS, CODEX_TUNER_CLAUDE_BIN, and
+# CODEX_TUNER_CLAUDE_AUTH_FILE are test overrides.
 set -u
+umask 077
+
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+# shellcheck source=lib.sh
+. "$SCRIPT_DIR/lib.sh"
+execute_task_init_root
 
 missing=0
+
+jq_available=true
+if ! command -v jq >/dev/null 2>&1; then
+  echo "MISSING: jq (required by codex-tuner run state and plugin discovery)" >&2
+  missing=1
+  jq_available=false
+fi
 
 if [ -n "${CODEX_TUNER_SKILLS_ROOTS:-}" ]; then
   IFS=':' read -r -a skill_roots <<< "$CODEX_TUNER_SKILLS_ROOTS"
@@ -48,16 +61,6 @@ if [ "$missing" -ne 0 ]; then
   echo "  install: npx skills@latest add mattpocock/skills --global --agent codex --skill grilling domain-modeling code-review --yes" >&2
 fi
 
-plugin_list() {
-  if [ -n "${CODEX_TUNER_PLUGIN_LIST_FILE:-}" ]; then
-    cat -- "$CODEX_TUNER_PLUGIN_LIST_FILE"
-  elif command -v codex >/dev/null 2>&1; then
-    codex plugin list --json 2>/dev/null
-  else
-    return 1
-  fi
-}
-
 python_available=false
 if ! command -v python3 >/dev/null 2>&1; then
   echo "MISSING: python3 (required by codex-cc-triage)" >&2
@@ -66,30 +69,15 @@ else
   python_available=true
 fi
 
-if [ "$python_available" = true ] && ! plugin_list | python3 -c '
-import json
-import sys
-
-try:
-    plugins = json.load(sys.stdin).get("installed", [])
-except (AttributeError, json.JSONDecodeError):
-    raise SystemExit(1)
-
-raise SystemExit(
-    0
-    if any(
-        plugin.get("pluginId") == "codex-cc-triage@codex-cc-triage"
-        and plugin.get("installed") is True
-        and plugin.get("enabled") is True
-        for plugin in plugins
-    )
-    else 1
-)
-'; then
-  echo "MISSING: enabled codex-cc-triage plugin (skill: claude-review)" >&2
-  echo "  install: codex plugin marketplace add clicktronix/codex-cc-triage --ref main" >&2
-  echo "           codex plugin add codex-cc-triage@codex-cc-triage" >&2
-  missing=1
+plugin_root=""
+if [ "$python_available" = true ] && [ "$jq_available" = true ]; then
+  plugin_root="$(execute_task_claude_plugin_root 2>/dev/null || true)"
+  if [ -z "$plugin_root" ]; then
+    echo "MISSING: enabled codex-cc-triage required-review contract (skill: claude-review)" >&2
+    echo "  install: codex plugin marketplace add clicktronix/codex-cc-triage --ref main" >&2
+    echo "           codex plugin add codex-cc-triage@codex-cc-triage" >&2
+    missing=1
+  fi
 fi
 
 claude_bin="${CODEX_TUNER_CLAUDE_BIN:-claude}"
