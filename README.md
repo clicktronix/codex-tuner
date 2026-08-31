@@ -7,9 +7,9 @@ task runtime.
 
 - `$codex-tuner:spec <issue | description>` reads the repository, resolves material decisions, and
   commits one executable spec. It uses grilling or domain modeling only when the task needs them.
-- `$codex-tuner:run [--auto] <spec | task>` uses Codex's native plan and Goal mode, implements and
-  tests the task, runs proportionate review, obtains exact-candidate Claude approval, verifies
-  required CI, merges through a checked boundary, and cleans up.
+- `$codex-tuner:run [--auto] <spec | task>` commits a short contract first when given a task, then
+  uses Codex's native plan and Goal mode to implement, test, review, merge through a checked boundary,
+  and clean up.
 - `$codex-tuner:task-flow` supplies branch, PR, tracker, merge, and cleanup conventions.
 
 There is no custom run state, phase machine, journal, or separate plan command. For unattended work,

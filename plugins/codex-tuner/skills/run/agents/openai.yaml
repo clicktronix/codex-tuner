@@ -1,5 +1,5 @@
 interface:
-  display_name: "Run Specification"
+  display_name: "Run Task"
   short_description: "Deliver a task through native Goal mode"
   default_prompt: "Use $codex-tuner:run to implement this task through tests, proportionate review, required CI, merge, and cleanup."
 policy:
