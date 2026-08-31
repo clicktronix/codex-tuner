@@ -5,10 +5,8 @@ description: Use only when explicitly invoked to implement a committed spec or a
 
 # Run Task
 
-Parse `[--auto] <spec-path | concrete task>`. A committed spec is preferred but not mandatory. When
-one exists, it is authoritative. Without one, derive a compact working contract from the request and
-repository, publish it in the native plan, and proceed; persist a spec only when the task is large,
-architecturally consequential, or would otherwise leave important decisions implicit.
+Parse `[--auto] <spec-path | concrete task>`. When a committed spec exists, it is authoritative.
+Without one, derive and commit the short contract described below before implementation.
 
 `--auto` authorizes task-scoped commits, push, PR creation/update, and merge after every gate passes.
 It does not authorize deploy, publish, migration, force-push, destructive data operations, or work
@@ -26,10 +24,15 @@ evidence and record the choice. Stop only for missing authority, secrets, irreve
 or a decision that would materially change scope. Do not turn ordinary implementation questions into
 user interviews.
 
-Publish a native plan before editing. Include implementation units, verification, acceptance,
-candidate finalization, review, PR/CI, merge, and cleanup. Keep it current throughout the run. Goal
-mode and the native plan own persistence and status; do not create a parallel journal or run-state
-file.
+Publish a native plan before changing files. Include contract creation when needed, implementation
+units, verification, acceptance, candidate finalization, review, PR/CI, merge, and cleanup. Keep it
+current throughout the run; do not create a parallel journal or run-state file. Goal mode and the
+native plan own persistence and status.
+
+When no committed spec was supplied, use the contract shape in `../spec/SKILL.md`. Create and commit a
+short task contract on the task branch. In attended mode, present it once for approval; under `--auto`,
+resolve ordinary in-scope choices from repository evidence. Use that tracked path as the spec for
+every later review and merge gate.
 
 ## 2. Implement and prove
 
@@ -81,9 +84,6 @@ After advisory findings are settled, obtain the authoritative external review:
 ```text
 $codex-cc-triage:claude-review --required --base <base-sha> --spec <repo-relative-spec> --thread <task-thread> --cap 5 Review the complete candidate for correctness, architecture, security/data, and testing/operability. End with the required verdict.
 ```
-
-When no committed spec exists, create and commit a short task contract before this step; required
-review intentionally binds to a tracked spec path.
 
 Publish every completed external verdict immediately, before editing the candidate:
 

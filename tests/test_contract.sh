@@ -25,6 +25,19 @@ require "$RUN" 'Publish every completed external verdict immediately'
 require "$RUN" 'Never reset a capped thread to seek an easier verdict.'
 require "$RUN" 'merge.sh'
 
+python3 - "$RUN" <<'PY'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+plan = text.index("Publish a native plan before changing files")
+contract = text.index("When no committed spec was supplied")
+implementation = text.index("## 2. Implement and prove")
+freeze = text.index("## 3. Freeze the candidate")
+review = text.index("## 4. Review proportionally")
+assert plan < contract < implementation < freeze < review
+PY
+
 reject_tree 'runctl\.sh|workflow-contract\.json|run-state\.schema|execute-task-runs|\.agent-state/codex-tuner'
 reject_tree 'Phase [0-9]|authoritative run state|Markdown journal'
 
