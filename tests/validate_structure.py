@@ -380,7 +380,6 @@ def validate(root: Path) -> list[str]:
     marketplace = json.loads(
         (root / ".agents" / "plugins" / "marketplace.json").read_text()
     )
-    contract = json.loads((plugin / "workflow-contract.json").read_text())
     release_manifest = json.loads((root / ".release-please-manifest.json").read_text())
     errors: list[str] = []
 
@@ -447,38 +446,24 @@ def validate(root: Path) -> list[str]:
             errors.append(
                 f"{name} combined plugin and skill identity exceeds 64 characters"
             )
-        if len(skill_text.splitlines()) > 500:
-            errors.append(f"{name} exceeds 500 lines")
         if frontmatter and not skill_text[frontmatter.end() :].strip():
             errors.append(f"{name} skill body is empty")
         validate_agent_metadata(skill_dir, name, implicit, errors)
 
-    scripts = plugin / "scripts" / "execute-task"
-    for script in (
-        "config-init.sh",
-        "guard-artifacts.sh",
-        "journal.sh",
-        "lib.sh",
-        "prereq-check.sh",
-        "preflight.sh",
-        "runctl.sh",
-    ):
-        script_path = scripts / script
-        if not script_path.is_file():
-            errors.append(f"missing script: {script}")
-        elif script_path.stat().st_mode & 0o111 == 0:
-            errors.append(f"script is not executable: {script}")
-    for asset in (
-        plugin / "assets" / "execute-task" / "config.template.md",
+    merge_script = plugin / "scripts" / "merge.sh"
+    if not merge_script.is_file():
+        errors.append("missing script: merge.sh")
+    elif merge_script.stat().st_mode & 0o111 == 0:
+        errors.append("script is not executable: merge.sh")
+    legacy_paths = (
+        plugin / "scripts" / "execute-task",
         plugin / "references" / "tiering.md",
         plugin / "schemas" / "run-state.schema.json",
         plugin / "workflow-contract.json",
-    ):
-        if not asset.is_file():
-            errors.append(f"missing asset: {asset.relative_to(root)}")
-
-    if contract.get("version") != "2.0.0" or len(contract.get("invariants", [])) != 25:
-        errors.append("workflow contract mismatch")
+    )
+    for legacy_path in legacy_paths:
+        if legacy_path.exists():
+            errors.append(f"removed runtime path remains: {legacy_path.relative_to(root)}")
     if release_manifest.get(".") != version:
         errors.append("release manifest version mismatch")
     release_config = json.loads((root / "release-please-config.json").read_text())

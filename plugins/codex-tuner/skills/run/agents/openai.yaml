@@ -1,7 +1,7 @@
 interface:
   display_name: "Run Specification"
-  short_description: "Run a spec through exact-SHA delivery"
-  default_prompt: "Use $codex-tuner:run to publish a plan and execute this committed spec through tested, exact-SHA reviewed delivery."
+  short_description: "Deliver a task through native Goal mode"
+  default_prompt: "Use $codex-tuner:run to implement this task through tests, proportionate review, required CI, merge, and cleanup."
 policy:
   products:
     - "CODEX"

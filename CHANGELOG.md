@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.0] - 2026-08-31
+
+### Changed
+
+- Replace the custom phase machine, journal, schema, and workflow contract with Codex native Goal
+  mode and plan state.
+- Make normal review cheap and reserve one deep owner pass for large or sensitive candidates.
+- Add a checked merge boundary that revalidates companion approval, public verdict, required CI, and
+  PR head.
+
 ## [0.4.0](https://github.com/clicktronix/codex-tuner/compare/v0.3.0...v0.4.0) (2026-08-11)
 
 
