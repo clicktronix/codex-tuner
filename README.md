@@ -1,72 +1,50 @@
 # codex-tuner
 
-Codex-native skills for the same development lifecycle used by `cc-tuner`, adapted to Codex tools and
-instruction surfaces.
+Codex-native skills for turning a task into a verified pull request without rebuilding Codex's own
+task runtime.
 
-## Development flow
+## Flow
 
-- `$codex-tuner:spec <issue | description>` reads the repository, resolves requirements, creates the
-  task branch, and commits a machine-checkable spec with explicit `auto_ready` state.
-- `$codex-tuner:run [--auto] <spec>` publishes a visible plan before mutation, permits parallel agents
-  only for independent code-writing units, then enforces Testing & Code Verification, acceptance, an
-  immutable candidate, three exact-SHA reviews, PR/current-SHA CI, DoD, merge, and reconciliation.
-  Without `--auto` it stops at each declared boundary. `--auto` never authorizes deploy, publish, or
-  migration.
-- `$codex-tuner:task-flow` supplies branch, commit, PR, board, plan, merge, and cleanup conventions.
+- `$codex-tuner:spec <issue | description>` reads the repository, resolves material decisions, and
+  commits one executable spec. It uses grilling or domain modeling only when the task needs them.
+- `$codex-tuner:run [--auto] <spec | task>` uses Codex's native plan and Goal mode, implements and
+  tests the task, runs proportionate review, obtains exact-candidate Claude approval, verifies
+  required CI, merges through a checked boundary, and cleans up.
+- `$codex-tuner:task-flow` supplies branch, PR, tracker, merge, and cleanup conventions.
 
-The harness-neutral invariants are versioned in
-`plugins/codex-tuner/workflow-contract.json`. Claude-specific statusline, memory-file, and Stop-hook
-features remain outside this repository; semantic workflow parity does not require copying
-harness-only surfaces.
+There is no custom run state, phase machine, journal, or separate plan command. For unattended work,
+start `/goal` in Codex and then invoke `$codex-tuner:run --auto ...`. `--auto` grants the task-scoped
+delivery actions described by the skill; `/goal` supplies persistence and continuation.
 
-Authoritative run state and journals live under `.agent-state/codex-tuner/`; the published schema is
-`plugins/codex-tuner/schemas/run-state.schema.json`. The self-ignored directory avoids protected
-`.git/` writes and works in Codex's default workspace sandbox. The artifact guard also covers the
-legacy `.codex/execute-task-runs/` path.
-
-The delivery gate verifies Claude approval against the state held by the single enabled
-`codex-cc-triage@codex-cc-triage` installation; pasted approval text is not authority. GitHub delivery
-uses a bounded branch-scoped reviewer thread, so equal run IDs in linked worktrees do not share review
-state. It also requires at least one required check on the target branch. Codex instructions and
-optional hooks are guardrails; candidate/tree, reviewer-state, CI, and merge-head checks are the
-runtime boundaries.
+Normal review runs once. A single additional deep owner pass is reserved for sensitive surfaces,
+large diffs, cross-service changes, and major architecture boundaries. The authoritative merge gate
+is the independent `codex-cc-triage` review bound to the exact candidate, tracked spec, public verdict,
+required CI, and PR head.
 
 ## Install
 
-Install the three runtime companion skills from the current
-[Matt Pocock repository](https://github.com/mattpocock/skills) globally for Codex:
-
-```bash
-npx skills@latest add mattpocock/skills --global --agent codex --skill grilling domain-modeling code-review --yes
-```
-
-Install or update the independent Claude Code reviewer; its Phase 6 required-review contract needs an
-installed and authenticated `claude` executable and emits approval only for the unchanged candidate:
+Install the companion reviewer:
 
 ```bash
 codex plugin marketplace add clicktronix/codex-cc-triage --ref main
 codex plugin add codex-cc-triage@codex-cc-triage
 ```
 
-Then install `codex-tuner`:
+Install the review and optional discovery skills:
+
+```bash
+npx skills@latest add mattpocock/skills --global --agent codex \
+  --skill grilling domain-modeling code-review --yes
+```
+
+Install codex-tuner:
 
 ```bash
 codex plugin marketplace add clicktronix/codex-tuner --ref main
 codex plugin add codex-tuner@codex-tuner
 ```
 
-Start a new Codex thread after installation so Codex discovers the new skills. `spec` and `run` are
-explicit-only; `task-flow` can load when branch/PR lifecycle work matches its description. Run
-`/skills` to browse installed skills, or invoke `$grilling`, `$domain-modeling`, and `$code-review`
-directly. `codex-tuner` passes the committed spec and tracker config directly, so Matt Pocock's
-repository bootstrap skill is not a runtime dependency.
-
-Optional stable repository defaults can be scaffolded with:
-
-```bash
-bash <plugin-root>/scripts/execute-task/config-init.sh \
-  <plugin-root>/assets/execute-task/config.template.md
-```
+Start a new Codex session so the skills are discovered.
 
 ## Development
 
@@ -74,10 +52,8 @@ bash <plugin-root>/scripts/execute-task/config-init.sh \
 bash tests/run.sh
 ```
 
-CI runs the same suite on Ubuntu and macOS. Structure validation also enforces the current
-[OpenAI plugin submission contract](https://developers.openai.com/plugins/deploy/submission-errors).
-PR titles must be Conventional Commit subjects because squash merges feed release-please. Releases
-are maintained by release-please; do not hand-edit version fields independently.
+CI runs the same suite on Ubuntu and macOS. PR titles use Conventional Commit subjects because squash
+merges feed release-please.
 
 ## License
 

@@ -1,323 +1,130 @@
 ---
 name: run
-description: Use only for explicit $codex-tuner:run invocations with a committed spec. Publish a visible plan, implement, prove tests, review an immutable candidate, verify current-SHA CI and DoD, then merge and reconcile.
+description: Use only when explicitly invoked to implement a committed spec or a concrete task through tests, exact-candidate review, required CI, merge, and cleanup.
 ---
 
-# Run Specification
+# Run Task
 
-Parse `[--auto] <spec-path>`. No path means stop; never reconstruct a spec from chat. Explicit
-`--auto` authorizes task-scoped commit, push, PR creation/update, and merge to the named target after
-every gate passes. It also authorizes the task-scoped read-only Claude review. It never authorizes
-deploy, publish, migration, force-push, or extra scope.
+Parse `[--auto] <spec-path | concrete task>`. A committed spec is preferred but not mandatory. When
+one exists, it is authoritative. Without one, derive a compact working contract from the request and
+repository, publish it in the native plan, and proceed; persist a spec only when the task is large,
+architecturally consequential, or would otherwise leave important decisions implicit.
 
-Resolve `<plugin-root>` as two directories above this skill. Read the committed spec,
-`workflow-contract.json`, `references/tiering.md`, `skills/task-flow/SKILL.md`, and
-`.codex/execute-task.md` only for stable defaults omitted by the spec. The spec wins.
+`--auto` authorizes task-scoped commits, push, PR creation/update, and merge after every gate passes.
+It does not authorize deploy, publish, migration, force-push, destructive data operations, or work
+outside the task. It changes workflow policy, not client persistence: for overnight work the user
+must start Codex `/goal` before invoking this skill.
 
-## State and phase protocol
+## 1. Establish the contract
 
-`<plugin-root>/scripts/execute-task/runctl.sh` is authoritative for phases, tasks, gates, candidate,
-reviews, CI, and DoD. The Markdown journal is human audit narrative only.
+Read repository instructions, `../task-flow/SKILL.md`, the spec when supplied, relevant code and
+tests, and current dependency docs when required. Verify the task branch and target. Refuse `--auto`
+when the spec says `auto_ready: no` or an unresolved human-only decision remains.
 
-After Phase 0 initializes state, resolve free-form delivery paths through `runctl` instead of
-inventing paths inside the worktree. The first `prepare` persists the canonical scratch directory in
-run-owned sidecar state, so later resumes ignore ambient `TMPDIR` changes. These repository-bound
-files survive resume without joining the candidate and are removed by `finish`:
+For missing detail under `--auto`, choose the safest in-scope reversible option from repository
+evidence and record the choice. Stop only for missing authority, secrets, irreversible operations,
+or a decision that would materially change scope. Do not turn ordinary implementation questions into
+user interviews.
 
-```bash
-COMMIT_MESSAGE_FILE="$(bash "<plugin-root>/scripts/execute-task/runctl.sh" prepare <literal-run-id> commit-message)"
-PR_BODY_FILE="$(bash "<plugin-root>/scripts/execute-task/runctl.sh" prepare <literal-run-id> pr-body)"
+Publish a native plan before editing. Include implementation units, verification, acceptance,
+candidate finalization, review, PR/CI, merge, and cleanup. Keep it current throughout the run. Goal
+mode and the native plan own persistence and status; do not create a parallel journal or run-state
+file.
+
+## 2. Implement and prove
+
+Work one dependency-safe unit at a time. Parallelize only independent code-writing units with
+non-overlapping ownership; the parent integrates them into one candidate. Testing decisions, review
+decisions, delivery, and merge remain sequential.
+
+For behavior changes:
+
+1. Run the named failing check and confirm the expected semantic failure.
+2. Implement the smallest systemic fix within scope.
+3. Run targeted, full, static/build, runtime, and acceptance checks from the contract.
+4. Run the named negative proof when false green is otherwise plausible. Do not invent mutation work
+   for every slice.
+5. Read the complete diff and account for generated or formatter changes.
+
+A failing fixture, syntax error, unavailable service, or unrelated baseline failure is not proof of
+the requested RED. Establish whether a failure is pre-existing from reachability and the task-base
+diff, not merely from file age.
+
+## 3. Freeze the candidate
+
+Stage explicit paths only, inspect the staged diff, and commit using repository conventions. Require
+a clean worktree and record the full candidate SHA, base SHA, spec path (or `none`), and PR number.
+
+Any later code or test edit creates a new candidate and invalidates tests affected by the edit,
+acceptance, required review, public verdict, CI, and merge readiness. Re-run only the evidence the
+change can invalidate; do not restart unrelated advisory reviews as a ritual.
+
+## 4. Review proportionally
+
+Run the repository's `$code-review` once on the first clean candidate, passing the fixed base and
+committed spec explicitly. Validate its findings against the spec, source, and a concrete failure;
+fix valid findings and refute optional or out-of-scope suggestions instead of expanding the task.
+
+Add one high-effort owner review only when the candidate:
+
+- touches authentication, authorization, secrets, cryptography, destructive data, migrations,
+  public or persisted contracts, money, infrastructure, release, or security-sensitive input;
+- changes at least 15 production files or 500 production lines;
+- spans repositories/services or changes a major architectural boundary.
+
+That deep pass covers correctness/spec, architecture/systemic effects, security/data, and
+testing/operability. It is one coordinated review of one immutable candidate; do not fan it into a
+large agent swarm. Small ordinary changes pay only the normal review.
+
+After advisory findings are settled, obtain the authoritative external review:
+
+```text
+$codex-cc-triage:claude-review --required --base <base-sha> --spec <repo-relative-spec> --thread <task-thread> --cap 5 Review the complete candidate for correctness, architecture, security/data, and testing/operability. End with the required verdict.
 ```
 
-At every phase after readiness, first resume state and enter the next phase only when the preceding
-one is complete:
+When no committed spec exists, create and commit a short task contract before this step; required
+review intentionally binds to a tracked spec path.
+
+Publish every completed external verdict immediately, before editing the candidate:
 
 ```bash
-bash "<plugin-root>/scripts/execute-task/runctl.sh" resume <literal-run-id>
-bash "<plugin-root>/scripts/execute-task/runctl.sh" phase <literal-run-id> enter <literal-phase>
+gh pr review <pr> --comment --body "codex-tuner-verdict: <APPROVE|REQUEST_CHANGES> <candidate-sha>"
 ```
 
-A fix transition already returns to `implementation/in_progress`; resume it without entering twice.
-`resume` never clears a block. If it reports blocked state, surface the reason and stop; only a
-separate user decision may use **Reactivating a blocked run** below.
-Pass journal, task, gate, review, and completion evidence through stdin with a quoted heredoc:
+On `REQUEST_CHANGES`, validate findings, fix only valid in-scope issues, rerun affected evidence,
+commit a new candidate, and continue the same review thread. If every finding is refuted with a
+concrete `file:line` or explicitly deferred, the SHA stays unchanged but a fresh required round must
+approve it. Never reset a capped thread to seek an easier verdict. Missing, stale, unavailable,
+diverged, or capped review is a hard stop.
+
+## 5. Deliver through the checked boundary
+
+Push and create or update one PR. Require candidate SHA = pushed SHA = current PR head. Observe at
+least one required hosted check on that SHA; missing, skipped, stale, cancelled, billing-blocked, or
+red is not green. Check every Definition of Done item by name.
+
+Use the spec's merge strategy and the same required-review thread:
 
 ```bash
-bash "<plugin-root>/scripts/execute-task/runctl.sh" task <literal-run-id> start <literal-task-id>
-bash "<plugin-root>/scripts/execute-task/runctl.sh" task <literal-run-id> complete <literal-task-id> <<'CODEX_TUNER_TASK_EVIDENCE'
-<exact diff/check/acceptance evidence>
-CODEX_TUNER_TASK_EVIDENCE
-bash "<plugin-root>/scripts/execute-task/runctl.sh" gate <literal-run-id> record <dor|planning|testing|acceptance> <pass|fail> <<'CODEX_TUNER_GATE_EVIDENCE'
-<exact command and result evidence>
-CODEX_TUNER_GATE_EVIDENCE
-bash "<plugin-root>/scripts/execute-task/runctl.sh" gate <literal-run-id> record dod <pass|fail> --sha <literal-candidate-sha> <<'CODEX_TUNER_DOD_EVIDENCE'
-<exact Definition of Done evidence>
-CODEX_TUNER_DOD_EVIDENCE
-bash "<plugin-root>/scripts/execute-task/runctl.sh" phase <literal-run-id> complete <literal-phase>
-bash "<plugin-root>/scripts/execute-task/journal.sh" append <literal-run-id> <<'CODEX_TUNER_EVIDENCE'
-<verbatim evidence with literal branch/SHA/PR/check values>
-CODEX_TUNER_EVIDENCE
+bash "<plugin-root>/scripts/merge.sh" <pr> <squash|merge> <candidate-sha> <review-thread> <base-sha> <spec-path>
 ```
 
-Never pass evidence through `eval`, `bash -c`, command substitution, or a double-quoted positional
-argument.
+Resolve `<plugin-root>` as two directories above this skill directory. `merge.sh` independently
+re-reads the companion approval, public verdict, PR head, and required CI, then uses GitHub's atomic
+head pin. Do not replace it with raw `gh pr merge` for a codex-tuner run.
 
-Without `--auto`, stop at the end of Phases 1–7 and require separate confirmation before merge.
-Phase 0 flows directly into Phase 1 so the execution plan is visible on the initial invocation.
-
-## Phase 0 — readiness
-
-1. Run `scripts/execute-task/prereq-check.sh`.
-2. Derive a stable lowercase run ID. Resolve literal branch, target, and `auto_ready`; verify current
-   branch ownership, committed spec, unmerged PR state, and clean repository worktree.
-3. Validate the full DoR: problem/baseline, architecture/scope, deciding acceptance checks,
-   regression test, exact first failing command and expected failure, targeted/full/static/runtime
-   commands, environment/data, one-PR delivery, and CI source. A non-code exception needs its reason.
-4. Refuse `--auto` unless the spec says `auto_ready: yes`, `ci`, `target_test`, and `full_test` are
-   nonblank, and every `[eyes]` item has a replacement or dated waiver.
-5. Open and initialize owned state:
-   ```bash
-   bash "<plugin-root>/scripts/execute-task/preflight.sh" <literal-run-id> <literal-target> --expected-branch <literal-branch>
-   bash "<plugin-root>/scripts/execute-task/runctl.sh" init <literal-run-id> --mode <interactive|auto> --spec <repo-relative-spec>
-   ```
-   `init` opens `readiness/in_progress`; on restart use `resume`.
-6. Record `gate ... dor pass` with exact evidence, complete readiness, journal the literal config and
-   acceptance, and move the configured card to In Progress after recording its prior status.
-
-Continue directly to Phase 1.
-
-## Phase 1 — visible execution plan
-
-Resume and enter `planning`. Before editing, generating, staging, or delegating task paths, call
-`update_plan` with:
-
-- one item for every sequential implementation unit; if independent units will run concurrently,
-  one aggregate implementation-batch item in the visible plan and one separate run-state task per unit;
-- Testing & Code Verification;
-- acceptance evidence;
-- candidate finalization/commit;
-- owner, Matt, and Claude review;
-- PR plus current-SHA CI;
-- DoD, merge, and reconciliation.
-
-Keep at most one visible item `in_progress`, as required by `update_plan`; the aggregate batch is that
-item while its independent units execute. Add every concrete unit and lifecycle item to run state
-with an exact stable ID, phase, owned paths, acceptance slice, and deciding checks over stdin. The
-Codex plan is the visible view; run state is the source of truth. On resume, rebuild `update_plan`
-from `runctl status` before work continues.
-
-```bash
-bash "<plugin-root>/scripts/execute-task/runctl.sh" task <literal-run-id> add <literal-task-id> <implementation|testing|acceptance|candidate|review|delivery> <<'CODEX_TUNER_TASK'
-<owned paths, acceptance slice, dependencies, and deciding checks>
-CODEX_TUNER_TASK
-```
-
-After publishing `update_plan` and adding all lifecycle tasks, record `gate ... planning pass` with
-the exact visible-plan evidence. This gate is an auditable fail-closed claim; the Codex API does not
-provide an independent attestation that `update_plan` rendered. Complete `planning`, then apply the
-boundary.
-
-## Phase 2 — implementation
-
-Resume and enter `implementation`; after a fix transition, only resume. This is the only phase where
-subagents may mutate product code or tests. Choose effort from `references/tiering.md`.
-
-For behavior changes, write the named regression test first and run the first failing check. Confirm
-the expected semantic failure; syntax, config, fixture, or environment failure is not RED. For a
-non-code exception, capture the promised alternative baseline.
-
-Parallelize only independent code-writing units:
-
-- one isolated worktree per unit;
-- exact non-overlapping paths, acceptance slice, and scoped commands;
-- shared contracts, schemas, migrations, generated indexes, and integration files stay parent-owned
-  unless one unit owns them exclusively;
-- subagents do not change lifecycle state, integrate other units, commit, push, review, merge, or
-  delete worktrees.
-
-Subagents may write scoped tests and run scoped checks. The parent reads each complete diff, rejects
-scope leakage, independently verifies the unit, and integrates it. Dependent or overlapping units run
-sequentially. The parent owns conflicts, authoritative testing, architecture, acceptance, delivery,
-and user communication.
-
-Before leaving the mutation phase, reconcile shipped/deferred scope. When the branch completes the
-plan, move it with `git mv` to `<plans-root>/ARCHIVE/PLANS/` and run:
-
-```bash
-bash "<plugin-root>/scripts/execute-task/runctl.sh" spec <literal-run-id> relocate <new-repo-relative-spec>
-```
-
-Complete state/plan implementation items with diff and scoped-test evidence. File out-of-scope
-findings; never absorb them silently. Complete `implementation`, then apply the boundary.
-
-## Phase 3 — Testing & Code Verification
-
-Resume and enter `testing`. Do not write fixes while state says testing.
-
-1. Prove the regression test is green and its negative/mutation check fails when the fix is absent or
-   reversed.
-2. Run every targeted command and the full regression suite.
-3. Run required typecheck, lint, build, generated/migration, and runtime/browser checks.
-4. After formatter or `--fix`, read its entire diff and rerun both typecheck and lint.
-5. Read full status and diff; account for every file and behavior change.
-
-Establish a claimed pre-existing failure against the task base. If a fix is needed, send the reason to
-`phase <run-id> fix`, add the returned implementation item to the visible plan, and repeat from Phase
-2. Record `gate ... testing pass` with exact commands/results; it fingerprints the tested worktree.
-Complete `testing`, then apply the boundary.
-
-## Phase 4 — acceptance
-
-Resume and enter `acceptance`. Drive each `[machine]` criterion by its named check. For `[eyes]`, drive
-the recorded replacement, journal its waiver, or stop in HITL for the exact human step. `--auto`
-rejects an item without replacement or waiver.
-
-Record every result. A needed code change goes through `phase fix` and repeats Phases 2–4. Record the
-acceptance gate, complete the phase, and apply the boundary.
-
-## Phase 5 — immutable candidate
-
-Resume and enter `candidate`. Do not change the tested tree: candidate recording rejects a tree SHA
-that differs from the implementation and testing fingerprints. Populate the prepared commit-message
-file as data, inspect status and full diff, stage explicit task paths only, run the artifact guard,
-inspect the staged diff, and commit conventionally:
-
-```bash
-git add -- <path-1> <path-2>
-git diff --cached --check
-bash "<plugin-root>/scripts/execute-task/guard-artifacts.sh" <literal-run-id>
-git diff --cached
-git commit -F "$COMMIT_MESSAGE_FILE"
-```
-
-Require a clean worktree; record full HEAD through `candidate ... record <sha>` and capture its tree
-SHA. Complete `candidate`, then apply the boundary.
-
-## Phase 6 — exact-candidate review
-
-Resume and enter `review`. Read the complete candidate diff and run all three layers against the same
-literal base, candidate SHA/tree, and current tracked spec:
-
-1. Perform an owner deep review across every `workflow-contract.json` review lens. The lenses may run
-   serially only when the candidate is within both contract small-diff thresholds and touches no
-   sensitive surface; otherwise fan them out as independent read-only reviews of the same candidate.
-   Do not cap findings.
-2. Invoke `$code-review` with the fixed base and committed spec; require its Standards, Spec, and
-   architecture/systemic surfaces to have no unresolved blocking finding.
-3. Invoke the machine contract with literal `base_sha`, `candidate.sha`, `candidate.tree_sha`, and
-   `spec` from `runctl status`. Resolve the branch-scoped thread instead of constructing it from the
-   run ID; linked worktrees may use the same run ID:
-   ```bash
-   REVIEW_THREAD="$(bash "<plugin-root>/scripts/execute-task/runctl.sh" reviewer-thread <literal-run-id>)"
-   ```
-   Then invoke the skill with the printed value substituted literally:
-   ```text
-   $codex-cc-triage:claude-review --required --base <literal-base-sha> --spec <current-repo-relative-spec> --thread <literal-review-thread> --cap 5 Review the complete candidate against the spec using unbiased correctness, architecture, systemic, security/data, and testing/operability lenses.
-   ```
-   `--cap 5` bounds the whole review thread's reserved attempt claims, including the first and any
-   attempt later aborted for preflight, timeout, or tool failure; it does not cap findings and does
-   not mean five repairs. Require the exact self-verified
-   `CODEX_CC_REQUIRED_REVIEW APPROVE` marker with matching thread, head, tree, base and spec. Pass it
-   verbatim as Claude approval evidence. `runctl` resolves the single enabled
-   `codex-cc-triage@codex-cc-triage` installation and compares it with that reviewer's own
-   `review-state.sh check`; pasted, missing, duplicated, stale, or mismatched markers are rejected.
-
-   `CAP_REACHED`, divergence, timeout, or reviewer unavailability is a hard stop, never approval and
-   never a reason to retry the same required thread. Report the open findings and block the run with
-   that evidence. Only a later user decision may reset the review thread and unblock the run; never
-   reset reviewer state to escape a verdict.
-
-Validate every finding against candidate source and record it as fixed, refuted with `file:line`, or
-explicitly deferred to an issue. Invocation, partial output, stale candidate, or `REQUEST_CHANGES` is
-not approval. Record `owner-review`, `mattpocock`, and `claude` verdicts with the exact candidate
-through stdin.
-
-```bash
-bash "<plugin-root>/scripts/execute-task/runctl.sh" review <literal-run-id> record <owner-review|mattpocock|claude> <APPROVE|REQUEST_CHANGES> <literal-candidate-sha> <<'CODEX_TUNER_REVIEW'
-<verbatim verdict, exact required-review marker when applicable, and finding dispositions>
-CODEX_TUNER_REVIEW
-```
-
-Any code/test change goes through `phase fix`, a new commit, and complete Phases 2–6. It invalidates
-testing, acceptance, reviews, CI, and DoD; old approval cannot move forward. Complete `review` only
-after every exact-candidate approval exists, then apply the boundary. If a finding is refuted or
-deferred without changing the candidate, rerun that reviewer and record a fresh approval whose
-evidence names the finding, its `file:line` disposition or issue, and why the verdict changed; the
-earlier `REQUEST_CHANGES` remains in `review_history`. Use the enforced evidence fields
-`finding: ...`, `disposition: refuted|deferred ...`, and either `source: <path>:<line>` or
-`issue: <reference>`.
-
-## Phase 7 — PR, current-SHA CI, and DoD
-
-Resume and enter `delivery`. Verify clean HEAD equals the reviewed candidate. Push, find or create the
-PR with literal base/head/title and a prepared body:
-
-```bash
-git push -u origin <literal-branch>
-gh pr view <literal-branch> --json number,url,headRefOid,baseRefName || gh pr create --base <literal-target> --head <literal-branch> --title "<literal-title>" --body-file "$PR_BODY_FILE"
-```
-
-Require candidate = reviewed SHA = pushed SHA = current PR head. Observe required hosted checks on
-that SHA; missing, skipped, stale, cancelled, billing-blocked, or red is not green. Record it through
-`ci <run-id> record success <candidate-sha> --pr <literal-pr-number>` with exact evidence. The gate
-reads GitHub **required** checks: if the target branch requires none, delivery cannot prove hosted CI
-and stops until at least one required check is configured.
-
-Evaluate every pre-merge DoD item from evidence, record `dod pass --sha <candidate>`, complete delivery,
-and require `can-advance` plus `can-merge`. Show PR, SHA, reviews, CI, and DoD. HITL stops for separate
-merge confirmation; `--auto` continues only after `can-merge`.
-
-## Phase 8 — merge and reconcile
-
-Resume completed delivery state; rerun the artifact guard and `can-merge`. Recheck open PR, literal
-target, exact candidate head, green required CI, acceptance, and review dispositions.
-
-Merge with the spec method automatically only under `--auto`; otherwise require the separate user
-confirmation after Phase 7. Confirm actual `MERGED` state, then synchronize issue/board according to
-`Closes`/`Fixes` versus partial `Refs`.
-
-Use GitHub's atomic head guard with the recorded PR and candidate:
-
-```bash
-gh pr merge <literal-pr-number> --squash --match-head-commit <literal-candidate-sha>
-```
-
-Use the spec's literal `--squash` or `--merge` method; never merge a moved head.
-
-While still on the owned branch, append merged/board/cleanup evidence and finish state through stdin:
-
-```bash
-bash "<plugin-root>/scripts/execute-task/runctl.sh" finish <literal-run-id> <<'CODEX_TUNER_COMPLETION'
-<literal merged PR, issue/board, spec/archive, and cleanup evidence>
-CODEX_TUNER_COMPLETION
-```
-
-Switch to the literal target, pull `--ff-only`, remove only merged clean worktrees, prune, and delete
-proven-merged refs. Do not append to branch-owned state afterward and never hard-code `main`.
-
-## Reactivating a blocked run
-
-A block ends the phase loop. After the user resolves the recorded question, reactivate it separately:
-
-```bash
-bash "<plugin-root>/scripts/execute-task/runctl.sh" unblock <literal-run-id> <<'CODEX_TUNER_UNBLOCK'
-<the decision that cleared the block, and who made it>
-CODEX_TUNER_UNBLOCK
-```
-
-`runctl` journals the decision before clearing `blocked_reason`. The command cannot distinguish a
-user decision from agent-written prose, so an unattended run must report the block and stop instead
-of unblocking itself.
+Without `--auto`, stop before the first push or PR creation and again before merge. Under `--auto`,
+continue when the checked boundary passes. After confirmed `MERGED`, reconcile the tracker/spec,
+switch to the literal target, pull `--ff-only`, and remove only clean worktrees and proven-merged
+branches.
 
 ## Hard stops
 
-- Incomplete DoR or missing visible plan.
-- Missing/false RED, red targeted/full/static/runtime/acceptance check, or unexplained diff.
-- Any unresolved `[eyes]` criterion under `--auto`.
-- Missing, failed, partial, stale, capped, diverged, or unavailable exact-candidate review;
-  current-SHA CI or DoD failure.
-- Scope outside the spec, deploy/publish/migration, force-push, bypass flags, broad staging, unsafe
-  amend, or commit to target.
+- Scope or authority required beyond the contract.
+- Unresolved human-only acceptance under `--auto`.
+- Red or missing required verification, review, CI, or DoD evidence.
+- Dirty or moved candidate, unexplained files, stale approval, or moved PR head.
+- Deploy/publish/migration, force-push, bypass flags, broad staging, or direct target commits.
 
-Report criteria/evidence, reviewer dispositions, candidate/PR/current-SHA CI equality, DoD, merge,
-deferrals, reconciliation, and state path. Never claim CI or merge from an older SHA.
+Report the completed outcome first, then candidate/PR/CI/review evidence, deferred findings, and
+cleanup. Never claim CI, approval, or merge from an older SHA.

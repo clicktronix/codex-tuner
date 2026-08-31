@@ -1,7 +1,7 @@
 interface:
   display_name: "Specify Task"
-  short_description: "Define DoR, tests, acceptance, and DoD"
-  default_prompt: "Use $codex-tuner:spec to turn this task into a committed executable spec with DoR, tests, acceptance, and DoD."
+  short_description: "Commit a concise executable task spec"
+  default_prompt: "Use $codex-tuner:spec to turn this task into one approved specification with scope, acceptance, verification, and delivery decisions."
 policy:
   products:
     - "CODEX"

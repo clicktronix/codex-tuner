@@ -1,7 +1,7 @@
 {
   "name": "codex-tuner",
   "version": "0.4.0",
-  "description": "Codex-native spec, run, and task-flow skills with requirements grilling, domain modeling, and independent review gates.",
+  "description": "Codex-native specification and Goal-mode delivery with proportionate review and exact-candidate merge gates.",
   "author": {
     "name": "Clicktronix",
     "url": "https://github.com/clicktronix"
@@ -21,11 +21,11 @@
   "interface": {
     "displayName": "Codex Tuner",
     "shortDescription": "Verified Codex delivery",
-    "longDescription": "Use spec to grill and commit machine-checkable task intent, run to execute it with resumable phases, independent review, and current-SHA gates, and task-flow for branch, PR, board, plan, merge, and cleanup conventions.",
+    "longDescription": "Use spec to commit task intent, run to deliver through Codex Goal mode with proportionate review and current-SHA gates, and task-flow for branch, PR, tracker, merge, and cleanup conventions.",
     "developerName": "Clicktronix",
     "category": "Productivity",
     "capabilities": [
-      "Executable specifications",
+      "Executable task specifications",
       "Verified pull request delivery",
       "Cross-agent code review"
     ],
@@ -35,7 +35,7 @@
     "logo": "./assets/logo.svg",
     "defaultPrompt": [
       "Turn this task into an executable specification.",
-      "Run this committed specification through verified delivery."
+      "Run this task through native Goal-mode delivery and exact-candidate review."
     ]
   }
 }
