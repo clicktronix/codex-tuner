@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/clicktronix/codex-tuner/compare/v0.4.0...v0.5.0) (2026-08-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove the custom run-state, journal, workflow-contract, and scenario runtime in favor of Codex Goal mode and native plan state.
+
+### Features
+
+* use native goal delivery ([#11](https://github.com/clicktronix/codex-tuner/issues/11)) ([b59bc33](https://github.com/clicktronix/codex-tuner/commit/b59bc33794cd23e157757e10434dda61521b5eff))
+
 ## [0.4.0](https://github.com/clicktronix/codex-tuner/compare/v0.3.0...v0.4.0) (2026-08-11)
 
 
