@@ -1,0 +1,8 @@
+interface:
+  display_name: "Agent Rules"
+  short_description: "Load applicable repository rules and contracts"
+  default_prompt: "Use $codex-tuner:agent-rules for this repository."
+policy:
+  products:
+    - "CODEX"
+  allow_implicit_invocation: true

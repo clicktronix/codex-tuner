@@ -21,6 +21,20 @@ large diffs, cross-service changes, and major architecture boundaries. The autho
 is the independent `codex-cc-triage` review bound to the exact candidate, tracked spec, public verdict,
 required CI, and PR head.
 
+## Repository rules
+
+[Research and design](docs/2026-09-09-agent-rules-research.md).
+
+`agent-rules` loads the target repository's applicable instructions, modular rules, and linked
+contracts before a review or change, including when a task crosses into another repository.
+The plugin supplies one generic skill; project rules stay in their existing canonical files.
+
+Run `$codex-tuner:setup install` to add a short loading instruction to the repository's root
+`AGENTS.md` (or the effective `AGENTS.override.md`). Use `check` instead of `install` for a
+read-only status and diff. Repeated installation is a no-op. Conflicting managed blocks and
+symlinks require inspection and are not overwritten. No rule index or per-repo skill is copied.
+The instruction remains usable without the plugin; it is guidance, not an enforcement hook.
+
 ## Install
 
 Install the companion reviewer:
