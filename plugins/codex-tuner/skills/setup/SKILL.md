@@ -14,9 +14,11 @@ Locate `scripts/agent-rules-setup.py` relative to this skill's installed plugin 
 Run it with Python 3, the chosen mode, and `--repo` pointing at the intended repository/worktree.
 The helper resolves Git root from that location; it needs no network or extra Python packages.
 
-Show the proposed diff and outcome. Exit 0 means installed/current, 1 means missing in check mode,
-and 2 means a conflict or operational failure. An existing root `AGENTS.override.md` takes precedence;
-otherwise setup adds the block to `AGENTS.md`. Existing prose, rules, skills, and docs are preserved.
+Show the proposed diff and outcome. Exit 0 means installed/current. Exit 1 means a change is
+needed in check mode: `MISSING` adds the block; `PRESENT BUT NOT FIRST` moves it to the start.
+Install reports `INSTALLED` or `MOVED` accordingly. Exit 2 means a conflict or operational failure. A non-empty root `AGENTS.override.md` takes
+precedence; otherwise setup adds the block to `AGENTS.md`. Empty overrides stay empty so they
+do not hide the owner's instructions. Existing prose, rules, skills, and docs are preserved.
 A conflicting block or symlink is reported without overwrite: inspect the owner's file and resolve
 within the user's authorized scope rather than adding a second competing copy.
 

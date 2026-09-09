@@ -33,6 +33,9 @@ Run `$codex-tuner:setup install` to add a short loading instruction to the repos
 `AGENTS.md` (or the effective `AGENTS.override.md`). Use `check` instead of `install` for a
 read-only status and diff. Repeated installation is a no-op. Conflicting managed blocks and
 symlinks require inspection and are not overwritten. No rule index or per-repo skill is copied.
+The block precedes existing prose, including its first heading, to fit before Codex's budget
+cutoff; the original prose bytes stay intact. Empty overrides stay empty so `AGENTS.md` remains
+active. `check` distinguishes a missing block from one that only needs moving to the start.
 The instruction remains usable without the plugin; it is guidance, not an enforcement hook.
 
 ## Install
