@@ -414,7 +414,13 @@ def validate(root: Path) -> list[str]:
     if entry.get("category") != manifest_category:
         errors.append("marketplace category mismatch")
 
-    expected_skills = {"spec": False, "run": False, "task-flow": True}
+    expected_skills = {
+        "spec": False,
+        "run": False,
+        "task-flow": True,
+        "agent-rules": True,
+        "setup": True,
+    }
     actual_skills = {
         path.name
         for path in (plugin / "skills").iterdir()

@@ -21,13 +21,14 @@
   "interface": {
     "displayName": "Codex Tuner",
     "shortDescription": "Verified Codex delivery",
-    "longDescription": "Use spec to commit task intent, run to deliver through Codex Goal mode with proportionate review and current-SHA gates, and task-flow for branch, PR, tracker, merge, and cleanup conventions.",
+    "longDescription": "Use spec to commit task intent, run to deliver through Codex Goal mode with proportionate review and current-SHA gates, and task-flow for branch, PR, tracker, merge, and cleanup conventions. Use setup to wire repository rule loading and agent-rules to read the applicable project contracts.",
     "developerName": "Clicktronix",
     "category": "Productivity",
     "capabilities": [
       "Executable task specifications",
       "Verified pull request delivery",
-      "Cross-agent code review"
+      "Cross-agent code review",
+      "Repository rule loading and setup"
     ],
     "websiteURL": "https://github.com/clicktronix/codex-tuner",
     "brandColor": "#0F766E",
