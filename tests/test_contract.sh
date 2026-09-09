@@ -27,6 +27,16 @@ require "$RUN" 'At the cap, stop paid review attempts and delivery — not the w
 require "$RUN" 'they do not
 need another confirmation'
 require "$RUN" 'merge.sh" --ci <mode>'
+require "$RUN" 'unless that authorization was already
+given'
+require "$RUN" 'reviewed base to be a proper ancestor of the candidate'
+require "$RUN" 'delivered as a set'
+if grep -qF 'run both typecheck and lint' "$PLUGIN/skills/task-flow/SKILL.md"; then
+  echo "FAIL task-flow still prescribes typecheck+lint for every repository" >&2; exit 1
+fi
+if grep -qF 'use issues without project commands' "$PLUGIN/skills/task-flow/SKILL.md"; then
+  echo "FAIL task-flow still conflates tracker: none with board: none" >&2; exit 1
+fi
 require "$SPEC" 'ci: <mode> — <the checks, and how to observe them>'
 require "$SPEC" 'a defined PR per
 participating repository'

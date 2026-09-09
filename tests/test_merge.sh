@@ -193,11 +193,12 @@ if TEST_REVIEW_BASE=0000000000000000000000000000000000000000 run_merge 2>"$T/err
 fi
 grep -q 'does not cover thread, candidate, and spec' "$T/error"
 
-if TEST_PR_BASE=0000000000000000000000000000000000000000 run_merge 2>"$T/error"; then
-  echo "FAIL moved target base passed" >&2
-  exit 1
-fi
-grep -q 'not the reviewed base' "$T/error"
+# The target advanced after the review was opened: an ordinary long task, not a broken candidate.
+# The reviewed base is still a proper ancestor of the candidate, so the merge proceeds; equality of
+# the PR's current base with the reviewed base was the dead end this test used to demand.
+output="$(TEST_PR_BASE=0000000000000000000000000000000000000000 run_merge)"
+printf '%s' "$output" | grep -q 'base, and head are current' \
+  || { echo "FAIL an advanced target base blocked a reviewed candidate" >&2; exit 1; }
 
 if TEST_PR_BASE_REF=develop run_merge 2>"$T/error"; then
   echo "FAIL PR base branch outside the spec passed" >&2
@@ -209,7 +210,7 @@ if TEST_ARG_BASE="$SHA" TEST_REVIEW_BASE="$SHA" run_merge 2>"$T/error"; then
   echo "FAIL candidate accepted as its own review base" >&2
   exit 1
 fi
-grep -q 'not the reviewed base' "$T/error"
+grep -q 'must be a proper ancestor of the candidate' "$T/error"
 
 if TEST_PR='--repo=other/repository' run_merge 2>"$T/error"; then
   echo "FAIL option-like PR identifier passed" >&2
