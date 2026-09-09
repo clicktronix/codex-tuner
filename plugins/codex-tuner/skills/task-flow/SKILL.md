@@ -20,14 +20,27 @@ deploy, publish, migration, force-push, or destructive cleanup.
   `BREAKING CHANGE:` migration footer.
 - One task branch and PR attach to the implemented sub-issue, not its parent epic.
 - Use `Closes`/`Fixes` only for complete scope and `Refs` for partial or stacked scope.
-- PR verification links to hosted CI; do not paste long transcripts.
+- PR verification is a link to the checks attached to the candidate under the spec's `ci` mode; do
+  not paste long transcripts. A pending or paused check is not absent CI. With `ci: none:<reason>`
+  the local substitute is recorded on the PR as `codex-tuner-local-ci: <sha> <what ran>`.
 
 ## Issues, epics, and boards
 
 Use an epic with native sub-issues when work spans repositories, PRs, or independently reviewed phases.
 Otherwise use one issue. Add the issue to the configured board with Status and Priority. Record prior
 status before moving it to In Progress. After a confirmed merge, complete the card only for a closing PR;
-leave referenced partial work In Progress. File each deferred review finding as its own issue.
+leave referenced partial work In Progress. With `tracker: none`, use issues without project commands.
+
+## Scope of a finding
+
+- **Fix this task's bugs, regressions and missing acceptance criteria**, including missing work they
+  depend on. File location, repository, severity, size and finding count do not decide scope; defect
+  causality and the agreed outcome do. A reviewer's independent improvement is not a new requirement.
+- **Tracking a defect does not resolve it.** An unmet acceptance criterion stays open until proved or
+  explicitly waived by the user. If access or a user decision blocks it, continue available work and
+  report the dependency; do not claim completion. Recording independent future work does not pause
+  the run or require a new confirmation for work already authorised — and it is one record for the
+  class, not one issue per finding.
 
 Pass explicit limits to `gh project list`, `field-list`, and `item-list`; their default pagination can
 hide cards. Cache stable field and option IDs in repo-local instructions, refresh once after an edit

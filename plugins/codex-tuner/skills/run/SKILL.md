@@ -22,7 +22,9 @@ when the spec says `auto_ready: no` or an unresolved human-only decision remains
 For missing detail under `--auto`, choose the safest in-scope reversible option from repository
 evidence and record the choice. Stop only for missing authority, secrets, irreversible operations,
 or a decision that would materially change scope. Do not turn ordinary implementation questions into
-user interviews.
+user interviews. Existing authorization covers routine checks and successful reviews: they do not
+need another confirmation. Batch related pending decisions into one concise request and continue
+the available work meanwhile; do not wait for a finding count or claim a blocked outcome complete.
 
 Publish a native plan before changing files. Include contract creation when needed, implementation
 units, verification, acceptance, candidate finalization, review, PR/CI, merge, and cleanup. Keep it
@@ -94,24 +96,33 @@ gh pr review <pr> --comment --body "codex-tuner-verdict: <APPROVE|REQUEST_CHANGE
 On `REQUEST_CHANGES`, validate findings, fix only valid in-scope issues, rerun affected evidence,
 commit a new candidate, and continue the same review thread. If every finding is refuted with a
 concrete `file:line` or explicitly deferred, the SHA stays unchanged but a fresh required round must
-approve it. Never reset a capped thread to seek an easier verdict. Missing, stale, unavailable,
-diverged, or capped review is a hard stop.
+approve it. Never reset a capped thread to seek an easier verdict.
+
+**At the cap, stop paid review attempts and delivery — not the work.** Continue the safe remaining
+fixes, keep the candidate stable, and report the missing approval once, in one request, together with
+any other pending decision. Missing, stale, unavailable, diverged or capped review blocks merge; it
+does not end the run.
 
 ## 5. Deliver through the checked boundary
 
-Push and create or update one PR. Require candidate SHA = pushed SHA = current PR head. Observe at
-least one required hosted check on that SHA; missing, skipped, stale, cancelled, billing-blocked, or
-red is not green. Check every Definition of Done item by name.
+Push and create or update the PR for each participating repository. Require candidate SHA = pushed
+SHA = current PR head. Observe CI in the mode the spec declares — `required`: the target's required
+checks; `any`: every check reported on the head, at least one; `none:<reason>`: no hosted checks, and
+the local substitute recorded first with
+`gh pr comment <pr> --body "codex-tuner-local-ci: <candidate-sha> <what ran, and what it returned>"`.
+Pending, skipped, stale, cancelled, billing-blocked or red is not green in any mode, and `none` never
+outranks a check that ran. If observation contradicts the spec, correct its `ci:` mode before review
+rather than picking a mode at the merge boundary. Check every Definition of Done item by name.
 
-Use the spec's merge strategy and the same required-review thread:
+Use the spec's merge strategy, its `ci` mode verbatim, and the same required-review thread:
 
 ```bash
-bash "<plugin-root>/scripts/merge.sh" <pr> <squash|merge> <candidate-sha> <review-thread> <base-sha> <spec-path>
+bash "<plugin-root>/scripts/merge.sh" --ci <mode> <pr> <squash|merge> <candidate-sha> <review-thread> <base-sha> <spec-path>
 ```
 
 Resolve `<plugin-root>` as two directories above this skill directory. `merge.sh` independently
-re-reads the companion approval, public verdict, PR head, and required CI, then uses GitHub's atomic
-head pin. Do not replace it with raw `gh pr merge` for a codex-tuner run.
+re-reads the companion approval, public verdict, PR head, and CI under the declared mode, then uses
+GitHub's atomic head pin. Do not replace it with raw `gh pr merge` for a codex-tuner run.
 
 Without `--auto`, stop before the first push or PR creation and again before merge. Under `--auto`,
 continue when the checked boundary passes. After confirmed `MERGED`, reconcile the tracker/spec,
@@ -122,7 +133,8 @@ branches.
 
 - Scope or authority required beyond the contract.
 - Unresolved human-only acceptance under `--auto`.
-- Red or missing required verification, review, CI, or DoD evidence.
+- Red or missing verification, review, CI under the declared mode, or DoD evidence — a hard stop for
+  **delivery**; safe in-scope work continues and the gap is reported once.
 - Dirty or moved candidate, unexplained files, stale approval, or moved PR head.
 - Deploy/publish/migration, force-push, bypass flags, broad staging, or direct target commits.
 

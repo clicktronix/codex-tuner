@@ -68,7 +68,7 @@ Use `wiki/PLANS/YYYY-MM-DD-<slug>.md` when `wiki/` exists, otherwise
 - [ ] Acceptance and verification above pass
 - [ ] Complete diff is accounted for; no unexplained files remain
 - [ ] Required reviews approve the exact clean candidate
-- [ ] PR head equals the reviewed SHA and required CI passes on it
+- [ ] PR head equals the reviewed SHA and CI passes on it under the declared `ci` mode
 - [ ] Merge and tracker/branch/worktree cleanup are reconciled
 
 ## Delivery
@@ -76,14 +76,21 @@ branch: <task branch>
 target: <integration branch>
 merge: squash|merge
 auto_ready: yes|no — <reason when no>
-ci: <required GitHub checks>
+ci: <mode> — <the checks, and how to observe them>
+    required   the target branch has required checks on GitHub (the default; strongest)
+    any        CI runs here but nothing is required — every reported check must pass
+    none:<why> no hosted checks; the local substitute is recorded on the PR before merge
 tracker: gh|none
 ```
 
-Use `[eyes]` only for irreducible human judgement. `auto_ready: yes` requires one PR, complete
-verification commands, at least one required hosted check, and a machine replacement or dated waiver
-for every `[eyes]` item. Documentation-only work may replace RED or mutation with a concrete baseline
-and diff check.
+Choose `ci` from what the repository actually does, not from the default: inspect branch protection
+and the workflows that attach to a candidate. `run` passes the mode verbatim to `merge.sh`.
+
+Use `[eyes]` only for irreducible human judgement. `auto_ready: yes` requires a defined PR per
+participating repository, complete verification commands, a nonblank `ci` mode, and a machine
+replacement or dated waiver for every `[eyes]` item. A coupled outcome may span repositories; each
+candidate then carries its own review and CI contract. Documentation-only work may replace RED or
+mutation with a concrete baseline and diff check.
 
 Split work into multiple specs only when it needs multiple PRs, repositories, or independently
 reviewed delivery phases. The implementation outline is guidance for Codex's native plan, not a
