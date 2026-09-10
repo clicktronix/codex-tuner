@@ -23,7 +23,23 @@ require "$RUN" 'changes at least 15 production files or 500 production lines'
 require "$RUN" 'large agent swarm'
 require "$RUN" 'Publish every completed external verdict immediately'
 require "$RUN" 'Never reset a capped thread to seek an easier verdict.'
-require "$RUN" 'merge.sh'
+require "$RUN" 'At the cap, stop paid review attempts and delivery — not the work.'
+require "$RUN" 'they do not
+need another confirmation'
+require "$RUN" 'merge.sh" --ci <mode>'
+require "$SPEC" 'ci: <mode> — <the checks, and how to observe them>'
+require "$SPEC" 'a defined PR per
+participating repository'
+TASK_FLOW="$PLUGIN/skills/task-flow/SKILL.md"
+require "$TASK_FLOW" 'Tracking a defect does not resolve it.'
+require "$TASK_FLOW" 'one record for the
+class, not one issue per finding'
+if grep -qF 'File each deferred review finding as its own issue' "$TASK_FLOW"; then
+  echo "FAIL task-flow still files one issue per deferred finding" >&2; exit 1
+fi
+if grep -qF 'capped review is a hard stop' "$RUN"; then
+  echo "FAIL run still treats a capped review as a stop for all work" >&2; exit 1
+fi
 
 python3 - "$RUN" <<'PY'
 from pathlib import Path
