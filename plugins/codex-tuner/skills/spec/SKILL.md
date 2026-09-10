@@ -81,10 +81,22 @@ ci: <mode> — <the checks, and how to observe them>
     any        CI runs here but nothing is required — every reported check must pass
     none:<why> no hosted checks; the local substitute is recorded on the PR before merge
 tracker: gh|none
+second-repo: <checkout path>, branch <name>, spec <repo-relative path> — <what it contributes,
+    what must land first, and why>. Omit for one repository. Written only in the primary spec.
+shared-task: <primary repository, branch and spec path>. Written only in a companion spec; read
+    the primary spec too. This contribution does not complete the shared outcome by itself.
+rollout: <prerequisite that must be confirmed applied before a dependent candidate merges — a
+    migration, a feature flag, a published package — and the command that confirms it | none>
 ```
 
 Choose `ci` from what the repository actually does, not from the default: inspect branch protection
 and the workflows that attach to a candidate. `run` passes the mode verbatim to `merge.sh`.
+
+For a coupled outcome, the **primary spec** owns the combined acceptance criteria — the checks that
+prove the shared result, not each repository's part — and names the merge order. Each companion
+spec owns its own target, CI mode and review thread. `rollout` is where a dependency that is not a
+commit lives: a schema migration that must be applied before the consumer merges is a prerequisite
+`run` confirms with the named command, not a hope.
 
 Use `[eyes]` only for irreducible human judgement. `auto_ready: yes` requires a defined PR per
 participating repository, complete verification commands, a nonblank `ci` mode, and a machine
@@ -99,9 +111,10 @@ second plan file or a custom state machine.
 ## Confirm and commit
 
 Present the decisions, scope, checks, and implementation outline once. Ask the user to approve the
-contract; revise if needed. After approval, create or update the issue, write the spec, link issue and
-spec both ways, inspect the full diff, and commit only the intended spec and any required domain
-artifacts using repository conventions.
+contract; revise if needed. After approval — with `tracker: gh`, create or update the issue and link
+it and the spec both ways; with `tracker: none`, no issue at any point, the committed spec is the
+record — write the spec, inspect the full diff, and commit only the intended spec and any required
+domain artifacts using repository conventions.
 
 Report the spec path, branch, target, and next command:
 

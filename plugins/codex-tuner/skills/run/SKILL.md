@@ -119,10 +119,12 @@ does not end the run.
 
 **A coupled outcome across repositories is delivered as a set.** Each candidate carries its own
 review thread and CI mode, but readiness is shared: run `merge.sh --check-only` for **every**
-participating candidate before the first merge, merge in the order the specs declare, and if a later
-merge refuses, stop merging, report exactly which candidates are delivered and which are not, and
-continue safe work on the undelivered ones. Separate green PRs do not establish that the shared
-result is ready; the combined acceptance in the primary spec does. Observe CI in the mode the spec declares — `required`: the target's required
+participating candidate before the first merge, confirm each spec's `rollout` prerequisite with the
+command it names — a migration applied, a flag set, a package published — before the candidate that
+depends on it merges, then merge in the order the primary spec declares. If a later merge refuses,
+stop merging, report exactly which candidates are delivered and which are not, and continue safe
+work on the undelivered ones. Separate green PRs do not establish that the shared result is ready;
+the combined acceptance in the primary spec does. Observe CI in the mode the spec declares — `required`: the target's required
 checks; `any`: every check reported on the head, at least one; `none:<reason>`: no hosted checks, and
 the local substitute recorded first with
 `gh pr comment <pr> --body "codex-tuner-local-ci: <candidate-sha> <what ran, and what it returned>"`.

@@ -23,6 +23,16 @@ mkdir -p "$REPO/docs" "$BIN" "$REVIEWER/scripts"
 )
 SHA="$(git -C "$REPO" rev-parse HEAD)"
 BASE="$(git -C "$REPO" rev-parse HEAD^)"
+# An advanced target: a commit on top of the reviewed base that the candidate does NOT contain.
+(
+  cd "$REPO"
+  git checkout -q -b advanced "$BASE"
+  printf 'advanced\n' > advanced.txt
+  git add advanced.txt
+  git commit -qm 'target advanced'
+  git checkout -q main
+)
+ADVANCED="$(git -C "$REPO" rev-parse advanced)"
 
 cat > "$REVIEWER/scripts/review-state.sh" <<'SH'
 #!/usr/bin/env bash
@@ -82,15 +92,17 @@ SH
 chmod +x "$BIN/gh"
 
 # Leading arguments are flags placed before --check-only, so a test can pass --ci <mode>.
+# TEST_CAND overrides the candidate SHA (default: the fixture's original candidate).
 run_merge() {
   rm -f "$T/pr-view-count"
-  (cd "$REPO" && PATH="$BIN:$PATH" TEST_SHA="$SHA" TEST_BASE="${TEST_REVIEW_BASE:-$BASE}" \
+  local cand="${TEST_CAND:-$SHA}"
+  (cd "$REPO" && PATH="$BIN:$PATH" TEST_SHA="$cand" TEST_BASE="${TEST_REVIEW_BASE:-$BASE}" \
     TEST_PR_BASE="${TEST_PR_BASE:-$BASE}" TEST_PR_VIEW_COUNT="$T/pr-view-count" \
     TEST_PR_BASE_REF="${TEST_PR_BASE_REF:-main}" TEST_REVIEWER="$REVIEWER" \
     TEST_MOVE_AFTER_CHECK="${TEST_MOVE_AFTER_CHECK:-}" \
     TEST_MOVE_BASE_AFTER_CHECK="${TEST_MOVE_BASE_AFTER_CHECK:-}" \
     TEST_CHECKS_ARGV="$T/checks-argv" \
-    "$MERGE" "$@" --check-only "${TEST_PR:-1}" squash "$SHA" task-review \
+    "$MERGE" "$@" --check-only "${TEST_PR:-1}" squash "$cand" task-review \
     "${TEST_ARG_BASE:-$BASE}" docs/spec.md)
 }
 
@@ -193,12 +205,21 @@ if TEST_REVIEW_BASE=0000000000000000000000000000000000000000 run_merge 2>"$T/err
 fi
 grep -q 'does not cover thread, candidate, and spec' "$T/error"
 
-# The target advanced after the review was opened: an ordinary long task, not a broken candidate.
-# The reviewed base is still a proper ancestor of the candidate, so the merge proceeds; equality of
-# the PR's current base with the reviewed base was the dead end this test used to demand.
-output="$(TEST_PR_BASE=0000000000000000000000000000000000000000 run_merge)"
-printf '%s' "$output" | grep -q 'base, and head are current' \
-  || { echo "FAIL an advanced target base blocked a reviewed candidate" >&2; exit 1; }
+# The target advanced after the review was opened — an ordinary long task. Two halves, both real:
+# equality of the PR's current base with the reviewed base was a dead end (a re-approved, integrated
+# candidate could never merge), but a candidate that does NOT yet contain the advanced target must
+# still be refused: the head pin protects the head, and GitHub would merge a tree nobody reviewed.
+if TEST_PR_BASE="$ADVANCED" run_merge 2>"$T/error"; then
+  echo "FAIL a candidate that does not include the advanced target was accepted" >&2
+  exit 1
+fi
+grep -q 'does not include it' "$T/error"
+# A base GitHub reports that cannot be resolved locally is a fetch problem, named as such.
+if TEST_PR_BASE=0000000000000000000000000000000000000000 run_merge 2>"$T/error"; then
+  echo "FAIL an unresolvable target tip passed" >&2
+  exit 1
+fi
+grep -q 'cannot resolve the current target tip' "$T/error"
 
 if TEST_PR_BASE_REF=develop run_merge 2>"$T/error"; then
   echo "FAIL PR base branch outside the spec passed" >&2
@@ -237,5 +258,17 @@ if TEST_MOVE_BASE_AFTER_CHECK=1 run_merge 2>"$T/error"; then
   exit 1
 fi
 grep -q 'changed while merge readiness was checked' "$T/error"
+
+# The integrated half: after the workflow merges the advanced target into the candidate and the new
+# SHA is approved, the reviewed base is still a proper ancestor and the target is now inside the
+# candidate — this is the path the old equality check made impossible. Last, because it moves HEAD.
+(
+  cd "$REPO"
+  git merge -q --no-edit advanced
+)
+INTEGRATED="$(git -C "$REPO" rev-parse HEAD)"
+output="$(TEST_CAND="$INTEGRATED" TEST_PR_BASE="$ADVANCED" run_merge)"
+printf '%s' "$output" | grep -q "would merge 1 (--squash) at $INTEGRATED" \
+  || { echo "FAIL an integrated, re-approved candidate was blocked by the advanced target: $output" >&2; exit 1; }
 
 echo "PASS merge"

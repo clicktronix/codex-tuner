@@ -79,6 +79,15 @@ BASE_OID="$(printf '%s' "$PRJSON" | jq -r '.baseRefOid // empty')"
 [ "$BASE" != "$SHA" ] || die "reviewed base $BASE must be a proper ancestor of the candidate, not the candidate itself"
 git -C "$ROOT" merge-base --is-ancestor "$BASE" "$SHA" 2>/dev/null \
   || die "reviewed base $BASE is not an ancestor of candidate $SHA"
+# ...and the target as it is NOW must be inside the candidate. The head pin protects the head, not
+# the base: with the target advanced and the candidate not containing it, GitHub would merge a tree
+# nobody reviewed. run integrates the target and re-reviews before delivery; this is where that rule
+# becomes a check instead of prose. The tip may not be fetched yet — fetch the base branch first.
+git -C "$ROOT" cat-file -e "$BASE_OID^{commit}" 2>/dev/null \
+  || git -C "$ROOT" fetch -q origin "$BASE_REF" 2>/dev/null \
+  || die "cannot resolve the current target tip $BASE_OID locally; fetch $BASE_REF and retry"
+git -C "$ROOT" merge-base --is-ancestor "$BASE_OID" "$SHA" 2>/dev/null \
+  || die "the target advanced to $BASE_OID and candidate $SHA does not include it — integrate the target, re-verify affected evidence, obtain approval for the new candidate, then merge"
 
 REVIEWER_ROOT=""
 REGISTRY="$(codex plugin list --json 2>/dev/null)" \

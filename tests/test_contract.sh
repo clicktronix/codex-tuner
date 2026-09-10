@@ -31,6 +31,11 @@ require "$RUN" 'unless that authorization was already
 given'
 require "$RUN" 'reviewed base to be a proper ancestor of the candidate'
 require "$RUN" 'delivered as a set'
+require "$RUN" 'rollout` prerequisite'
+require "$SPEC" 'rollout: <prerequisite'
+if grep -qF 'After approval, create or update the issue, write the spec' "$SPEC"; then
+  echo "FAIL spec still creates an issue unconditionally after approval" >&2; exit 1
+fi
 if grep -qF 'run both typecheck and lint' "$PLUGIN/skills/task-flow/SKILL.md"; then
   echo "FAIL task-flow still prescribes typecheck+lint for every repository" >&2; exit 1
 fi
