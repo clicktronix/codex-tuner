@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0](https://github.com/clicktronix/codex-tuner/compare/v0.5.0...v0.6.0) (2026-09-10)
+
+
+### Features
+
+* add agent-rules and repository setup ([#15](https://github.com/clicktronix/codex-tuner/issues/15)) ([1ca70f6](https://github.com/clicktronix/codex-tuner/commit/1ca70f6f5c050e650c038b165b97799b3ba51281))
+* align run, task-flow, spec and merge.sh with the cc-tuner contract ([97fe301](https://github.com/clicktronix/codex-tuner/commit/97fe30122a5f44ea3a6c6b8c12bcf3e2ac94b61b))
+* run setup as nodes with an instruction-cleanup boundary and a report ([5047dd8](https://github.com/clicktronix/codex-tuner/commit/5047dd8e9bb3c75ec8ca6babb431d36e1a62ce38))
+
+
+### Bug Fixes
+
+* close delivery contract gaps ([#13](https://github.com/clicktronix/codex-tuner/issues/13)) ([4d20548](https://github.com/clicktronix/codex-tuner/commit/4d20548ddf7b72e0689a8b70b8c7e51e962eb6d4))
+* let the target advance under a reviewed candidate; publish verdicts after the PR exists ([d1f04b0](https://github.com/clicktronix/codex-tuner/commit/d1f04b0fa8972b4389bff3b3a9f08bb20122dd2f))
+
 ## [0.5.0](https://github.com/clicktronix/codex-tuner/compare/v0.4.0...v0.5.0) (2026-08-31)
 
 
