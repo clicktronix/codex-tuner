@@ -81,11 +81,25 @@ That deep pass covers correctness/spec, architecture/systemic effects, security/
 testing/operability. It is one coordinated review of one immutable candidate; do not fan it into a
 large agent swarm. Small ordinary changes pay only the normal review.
 
-After advisory findings are settled, obtain the authoritative external review:
+The authoritative external review runs in section 5, once the PR exists: its verdict is published
+as a PR review, so there is nothing to publish it on before that.
+
+## 5. Deliver through the checked boundary
+
+Push and create or update the PR for each participating repository. Require candidate SHA = pushed
+SHA = current PR head.
+
+With the PR open, obtain the authoritative external review of the exact candidate:
 
 ```text
 $codex-cc-triage:claude-review --required --base <base-sha> --spec <repo-relative-spec> --thread <task-thread> --cap 5 Review the complete candidate for correctness, architecture, security/data, and testing/operability. End with the required verdict.
 ```
+
+`<base-sha>` is the literal target SHA the candidate was integrated with when the thread opened; it
+stays fixed for that thread. The target may advance afterwards — integrate it, re-verify affected
+evidence and re-review the new candidate in the same thread; do not re-open the review on a new
+base, and do not expect `merge.sh` to demand the PR's current base equal the reviewed one. It
+requires the reviewed base to be a proper ancestor of the candidate, and the head pin does the rest.
 
 Publish every completed external verdict immediately, before editing the candidate:
 
@@ -103,10 +117,14 @@ fixes, keep the candidate stable, and report the missing approval once, in one r
 any other pending decision. Missing, stale, unavailable, diverged or capped review blocks merge; it
 does not end the run.
 
-## 5. Deliver through the checked boundary
-
-Push and create or update the PR for each participating repository. Require candidate SHA = pushed
-SHA = current PR head. Observe CI in the mode the spec declares — `required`: the target's required
+**A coupled outcome across repositories is delivered as a set.** Each candidate carries its own
+review thread and CI mode, but readiness is shared: run `merge.sh --check-only` for **every**
+participating candidate before the first merge, confirm each spec's `rollout` prerequisite with the
+command it names — a migration applied, a flag set, a package published — before the candidate that
+depends on it merges, then merge in the order the primary spec declares. If a later merge refuses,
+stop merging, report exactly which candidates are delivered and which are not, and continue safe
+work on the undelivered ones. Separate green PRs do not establish that the shared result is ready;
+the combined acceptance in the primary spec does. Observe CI in the mode the spec declares — `required`: the target's required
 checks; `any`: every check reported on the head, at least one; `none:<reason>`: no hosted checks, and
 the local substitute recorded first with
 `gh pr comment <pr> --body "codex-tuner-local-ci: <candidate-sha> <what ran, and what it returned>"`.
@@ -124,8 +142,9 @@ Resolve `<plugin-root>` as two directories above this skill directory. `merge.sh
 re-reads the companion approval, public verdict, PR head, and CI under the declared mode, then uses
 GitHub's atomic head pin. Do not replace it with raw `gh pr merge` for a codex-tuner run.
 
-Without `--auto`, stop before the first push or PR creation and again before merge. Under `--auto`,
-continue when the checked boundary passes. After confirmed `MERGED`, reconcile the tracker/spec,
+Without `--auto`, ask before the first push or PR creation **unless that authorization was already
+given** in this task — an earlier yes is not re-asked — and hand the verified candidate to the user
+for merge rather than merging it yourself. Under `--auto`, continue when the checked boundary passes. After confirmed `MERGED`, reconcile the tracker/spec,
 switch to the literal target, pull `--ff-only`, and remove only clean worktrees and proven-merged
 branches.
 

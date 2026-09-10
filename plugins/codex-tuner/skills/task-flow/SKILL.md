@@ -29,7 +29,9 @@ deploy, publish, migration, force-push, or destructive cleanup.
 Use an epic with native sub-issues when work spans repositories, PRs, or independently reviewed phases.
 Otherwise use one issue. Add the issue to the configured board with Status and Priority. Record prior
 status before moving it to In Progress. After a confirmed merge, complete the card only for a closing PR;
-leave referenced partial work In Progress. With `tracker: none`, use issues without project commands.
+leave referenced partial work In Progress. Two different "none"s: with `tracker: none` no issue is
+created or updated at any point and the committed spec is the record; with `board: none` issues
+exist but no project command runs.
 
 ## Scope of a finding
 
@@ -49,7 +51,10 @@ failure, and treat board failures after merge as reconciliation debt rather than
 ## Verification discipline
 
 - Show a regression test failing against the pre-fix behavior or an equivalent negative mutation.
-- After formatter or autofix, read its diff and run both typecheck and lint.
+- After a formatter or autofix, read the diff it produced and re-run the checks that cover what it
+  changed — the tool's own zero-error report is not one of them. Which checks depends on the
+  repository and the affected criteria; a TypeScript incident where typecheck caught what lint
+  passed does not prescribe both tools for every repository.
 - Decide whether a finding is pre-existing from defect reachability and the task-base diff, not whether
   its file was already present.
 - Review the complete changed surface, including untracked files and consumers of changed contracts.

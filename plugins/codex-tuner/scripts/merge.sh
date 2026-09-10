@@ -68,10 +68,26 @@ BASE_OID="$(printf '%s' "$PRJSON" | jq -r '.baseRefOid // empty')"
   || die "the head of $PR is ${HEAD_SHA:-unknown}, not candidate $SHA"
 [ -n "$BASE_REF" ] && [ "$BASE_REF" = "$SPEC_TARGET" ] \
   || die "the base of $PR is ${BASE_REF:-unknown}, not spec target $SPEC_TARGET"
-[ -n "$BASE_OID" ] && [ "$BASE_OID" = "$BASE" ] \
-  || die "the current PR base ${BASE_OID:-unknown} is not the reviewed base $BASE"
+[ -n "$BASE_OID" ] || die "cannot read the current base of $PR"
+# The reviewed base is the literal SHA the required review was opened against, and the bridge keeps
+# it fixed for the thread. The PR's base branch keeps moving underneath — every long task sees the
+# target advance — so requiring the two to be equal made an ordinary integration a dead end: the
+# candidate re-earned APPROVE, this check refused, and re-opening the review on the new base was
+# REVIEW_CONTRACT_CHANGED. What the merge actually needs is that the reviewed base is a proper
+# ancestor of the candidate (the review covered this lineage) and that the head was integrated with
+# the target by the workflow; where the target went since is GitHub's to merge, under the head pin.
+[ "$BASE" != "$SHA" ] || die "reviewed base $BASE must be a proper ancestor of the candidate, not the candidate itself"
 git -C "$ROOT" merge-base --is-ancestor "$BASE" "$SHA" 2>/dev/null \
   || die "reviewed base $BASE is not an ancestor of candidate $SHA"
+# ...and the target as it is NOW must be inside the candidate. The head pin protects the head, not
+# the base: with the target advanced and the candidate not containing it, GitHub would merge a tree
+# nobody reviewed. run integrates the target and re-reviews before delivery; this is where that rule
+# becomes a check instead of prose. The tip may not be fetched yet — fetch the base branch first.
+git -C "$ROOT" cat-file -e "$BASE_OID^{commit}" 2>/dev/null \
+  || git -C "$ROOT" fetch -q origin "$BASE_REF" 2>/dev/null \
+  || die "cannot resolve the current target tip $BASE_OID locally; fetch $BASE_REF and retry"
+git -C "$ROOT" merge-base --is-ancestor "$BASE_OID" "$SHA" 2>/dev/null \
+  || die "the target advanced to $BASE_OID and candidate $SHA does not include it — integrate the target, re-verify affected evidence, obtain approval for the new candidate, then merge"
 
 REVIEWER_ROOT=""
 REGISTRY="$(codex plugin list --json 2>/dev/null)" \
@@ -182,7 +198,9 @@ CURRENT_PRJSON="$($GH pr view "$PR" --json baseRefOid,headRefOid 2>/dev/null)" \
   || die "cannot re-read pull request '$PR' after CI"
 CURRENT_HEAD="$(printf '%s' "$CURRENT_PRJSON" | jq -r '.headRefOid // empty')"
 CURRENT_BASE="$(printf '%s' "$CURRENT_PRJSON" | jq -r '.baseRefOid // empty')"
-[ "$CURRENT_HEAD" = "$SHA" ] && [ "$CURRENT_BASE" = "$BASE" ] \
+# Movement DURING this check, measured against what this run first observed — not against the
+# reviewed base, which the target is allowed to have left behind.
+[ "$CURRENT_HEAD" = "$SHA" ] && [ "$CURRENT_BASE" = "$BASE_OID" ] \
   || die "PR head or base changed while merge readiness was checked"
 
 if [ -n "$CHECK_ONLY" ]; then
