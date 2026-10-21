@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-for script in "$ROOT"/plugins/codex-tuner/scripts/*.sh "$ROOT"/tests/test_*.sh; do
+for script in "$ROOT"/plugins/codex-tuner/scripts/*.sh "$ROOT"/plugins/codex-tuner/hooks/*.sh "$ROOT"/tests/test_*.sh; do
   bash -n "$script"
 done
 
