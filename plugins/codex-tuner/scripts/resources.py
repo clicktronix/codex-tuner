@@ -97,7 +97,7 @@ def read(path):
     required = {"process": ("token",), "container": ("resource", "endpoint", "daemon")}
     for record in data["resources"]:
         kind = record.get("kind") if isinstance(record, dict) else None
-        if kind not in required or not all(isinstance(record.get(key), str) for key in ("id", *required[kind])):
+        if not isinstance(kind, str) or kind not in required or not all(isinstance(record.get(key), str) for key in ("id", *required[kind])):
             raise ValueError("invalid resource record")
         if not re.fullmatch(r"[a-f0-9]{%d}" % (16 if kind == "process" else 64), record["id"]):
             raise ValueError("invalid resource identity")

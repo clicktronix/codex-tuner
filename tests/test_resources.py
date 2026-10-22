@@ -242,6 +242,27 @@ class ResourcesTest(unittest.TestCase):
         self.assertIn("b" * 32, result.stderr)
         self.assertTrue((self.root / ("b" * 32) / "owner.json").exists())  # Preserved, not deleted.
 
+    def test_every_required_field_of_the_wrong_type_does_not_stop_other_cleanup(self):
+        valid = dict(process=dict(kind="process", id="a" * 16, token="t"),
+                     container=dict(kind="container", id="b" * 64, resource="r", endpoint="e", daemon="d"))
+        broken = []
+        for record in valid.values():
+            for field in record:
+                for wrong in ([], {}, None, 1):
+                    name = "%032x" % (len(broken) + 1)
+                    (self.root / name).mkdir()
+                    (self.root / name / "owner.json").write_text(json.dumps(dict(
+                        version=1, session="native-session-A", closing=True, resources=[dict(record, **{field: wrong})])))
+                    broken.append(name)
+        scope = self.scope()
+        owned = self.start(scope)
+        result = self.cli("hook", payload=dict(session_id="native-session-A", hook_event_name="SessionEnd"))
+        until(lambda: not alive(owned["pid"]))
+        self.assertNotIn("Traceback", result.stderr)
+        for name in broken:
+            self.assertIn(name, result.stderr)
+            self.assertTrue((self.root / name / "owner.json").exists())
+
     def test_every_form_of_auto_remove_is_refused(self):
         scope = self.scope()
         for argument in ("--rm", "--rm=true", "--rm=false"):
