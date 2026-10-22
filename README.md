@@ -61,7 +61,14 @@ codex plugin marketplace add clicktronix/codex-tuner --ref main
 codex plugin add codex-tuner@codex-tuner
 ```
 
-Start a new Codex session so the skills are discovered.
+Start a new Codex session so the skills are discovered. Review and trust the plugin's lifecycle
+hooks through `/hooks`; enabling a plugin does not trust its hooks automatically.
+
+## Resource lifecycle
+
+[Task resources](plugins/codex-tuner/references/resources.md) covers task-owned previews, dedicated
+MCP servers and disposable containers. Heavy checks share cc-tuner's machine-wide slots. The helpers
+use Python 3 and no model calls; source changes reach new sessions after a plugin update or reload.
 
 ## Development
 

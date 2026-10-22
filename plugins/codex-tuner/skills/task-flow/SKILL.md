@@ -67,6 +67,9 @@ never create a standalone archival PR.
 
 ## Merge and cleanup
 
+Previews, dedicated MCP servers and test containers follow
+[task resources](../../references/resources.md), closing included, also without a merge.
+
 - Feature to integration branch: squash and delete the remote branch unless repo policy says otherwise.
 - Stacked PRs: preserve ancestry with merge commits inside the stack; squash only when the stack lands.
 - Verify the PR reads `MERGED`, then switch to its literal target and `git pull --ff-only`.

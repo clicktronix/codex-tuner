@@ -38,6 +38,11 @@ every later review and merge gate.
 
 ## 2. Implement and prove
 
+Previews, dedicated MCP servers and test containers follow
+[task resources](../../references/resources.md), closing included. Route full builds/suites, e2e and service starts through
+`<plugin-root>/scripts/heavy.sh --label "<repo>: <check>" -- <command>`; its machine-wide slots
+are shared with cc-tuner. Focused checks run directly.
+
 Work one dependency-safe unit at a time. Parallelize only independent code-writing units with
 non-overlapping ownership; the parent integrates them into one candidate. Testing decisions, review
 decisions, delivery, and merge remain sequential.

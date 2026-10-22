@@ -20,7 +20,9 @@ contradict each other or bury an always-on rule under procedure, propose the reb
 diff. This rewrites canonical instructions, so the additive rule above does not cover it: ask for
 confirmation only when the request did not already authorise a reorganisation, or when the diff
 settles a contradiction by choosing one side. A declined diff leaves every file untouched; node 2
-still runs. In `check` mode, report what would change and write nothing.
+still runs. In `check` mode, report what would change and write nothing. Preserve an existing
+agent-rules discovery block first; node 2 installs or verifies that canonical bridge, so cleanup
+must not generate a competing rule index or per-repository skill.
 
 **Node 2 — rule loading.** The additive block, below.
 
