@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/clicktronix/codex-tuner/compare/v0.6.0...v0.7.0) (2026-10-22)
+
+
+### Features
+
+* own task resources and share heavy-check slots ([#19](https://github.com/clicktronix/codex-tuner/issues/19)) ([d6bfed7](https://github.com/clicktronix/codex-tuner/commit/d6bfed75e81ae7018f3f453cf4310b404d002aa8))
+
 ## [0.6.0](https://github.com/clicktronix/codex-tuner/compare/v0.5.0...v0.6.0) (2026-09-10)
 
 
