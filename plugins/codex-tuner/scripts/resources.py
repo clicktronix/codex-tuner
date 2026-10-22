@@ -16,6 +16,7 @@ import secrets
 import select
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -29,7 +30,24 @@ LABEL = "dev.agent-tuner.scope"
 DEADLINE = None
 FAILURES = (OSError, ValueError, RuntimeError, subprocess.SubprocessError)
 DOCKER_ENV = ("DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH")
-RECORD_FILES = (".json", ".sock", ".log", ".done")
+RECORD_FILES = (".json", ".log", ".done")
+# Supervisor sockets live under a short private directory: an AF_UNIX path holds about 104 bytes,
+# and a home directory plus two random IDs under ROOT can already exceed that.
+SOCKET_ROOT = Path(os.environ.get("AGENT_TUNER_SOCKET_DIR", "/tmp/atr-%d" % os.getuid()))
+
+
+def socket_path(resource, create=False):
+    if create:
+        SOCKET_ROOT.mkdir(mode=0o700, exist_ok=True)
+    try:
+        info = SOCKET_ROOT.lstat()
+    except FileNotFoundError:
+        if create:
+            raise
+        return SOCKET_ROOT / (resource + ".sock")  # No directory, so no socket can exist in it.
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise ValueError("socket directory must be a private directory of the current user: " + str(SOCKET_ROOT))
+    return SOCKET_ROOT / (resource + ".sock")
 
 
 def remaining(limit):
@@ -71,14 +89,17 @@ def locked(path):
 def read(path):
     with (path / "owner.json").open() as file:
         data = json.load(file)
-    if not isinstance(data, dict) or not all(isinstance(record, dict) for record in data.get("resources") or []):
-        raise ValueError("invalid ownership record")
-    if (data.get("version") != 1 or not isinstance(data.get("resources"), list)
+    if (not isinstance(data, dict) or data.get("version") != 1 or not isinstance(data.get("resources"), list)
             or not isinstance(data.get("session"), str) or type(data.get("closing")) is not bool):
         raise ValueError("invalid ownership record")
+    # Every field a later step reads is checked here, so a damaged record is a ValueError that
+    # preserves it, never a TypeError that stops the hook before the next scope.
+    required = {"process": ("token",), "container": ("resource", "endpoint", "daemon")}
     for record in data["resources"]:
-        length = 16 if record.get("kind") == "process" else 64
-        if not re.fullmatch(r"[a-f0-9]{%d}" % length, record.get("id", "")):
+        kind = record.get("kind") if isinstance(record, dict) else None
+        if kind not in required or not all(isinstance(record.get(key), str) for key in ("id", *required[kind])):
+            raise ValueError("invalid resource record")
+        if not re.fullmatch(r"[a-f0-9]{%d}" % (16 if kind == "process" else 64), record["id"]):
             raise ValueError("invalid resource identity")
     return data
 
@@ -135,7 +156,7 @@ def terminate_group():
 
 def worker(path, resource, command, ready_fd, server_fd):
     """A private socket authenticates close; foreign/reused PIDs are never signalled."""
-    endpoint = path / (resource + ".sock")
+    endpoint = socket_path(resource)
     record = json.loads((path / (resource + ".json")).read_text())
     server = socket.socket(fileno=server_fd)
     child = None
@@ -172,14 +193,20 @@ def start(path, command):
             raise ValueError("scope is closing; open a new task scope")
         resource = secrets.token_hex(8)
         record = dict(kind="process", id=resource, token=secrets.token_hex(32))
-        (path / (resource + ".json")).write_text(json.dumps(record))
-        # Register before starting; a killed launcher cannot leave an unregistered child.
-        data["resources"].append(record)
-        save(path, data)
-        incoming, outgoing = os.pipe()
+        # Bind before registering: a socket that cannot exist leaves no record to be mistaken
+        # for a live resource. Register before starting; a killed launcher cannot leave an
+        # unregistered child.
         server = socket.socket(socket.AF_UNIX)
         try:
-            server.bind(str(path / (resource + ".sock")))
+            server.bind(str(socket_path(resource, create=True)))
+        except OSError:
+            server.close()
+            raise
+        incoming, outgoing = os.pipe()
+        try:
+            (path / (resource + ".json")).write_text(json.dumps(record))
+            data["resources"].append(record)
+            save(path, data)
             server.listen(2)
             with (path / (resource + ".log")).open("ab") as log:
                 child = subprocess.Popen([sys.executable, SCRIPT, "_worker", path.name,
@@ -220,7 +247,9 @@ def local_daemon():
 
 def container(path, arguments):
     # Use a dedicated disposable container; never adopt Compose/project databases.
-    if any(arg in ("--rm", "--label-file") or arg.startswith("--label-file=")
+    # Docker removing the container itself would leave close an unknown record and could drop
+    # anonymous volumes; every spelling of --rm is refused, the helper owns disposal.
+    if any(arg in ("--rm", "--label-file") or arg.startswith(("--rm=", "--label-file="))
            or "dev.agent-tuner." in arg for arg in arguments):
         raise ValueError("disposal and ownership labels are managed by the resource helper")
     endpoint, daemon = local_daemon()
@@ -242,15 +271,26 @@ def container(path, arguments):
 
 def stop_resource(path, record):
     if record["kind"] == "process":
-        endpoint = path / (record["id"] + ".sock")
+        endpoint = socket_path(record["id"])
         if not endpoint.exists():
             if (path / (record["id"] + ".done")).exists():
                 return
             raise RuntimeError("process lifetime unknown; preserved " + record["id"])
-        with socket.socket(socket.AF_UNIX) as connection:
-            connection.settimeout(remaining(2))
-            connection.connect(str(endpoint))
-            connection.sendall(record["token"].encode())
+        done = path / (record["id"] + ".done")
+        try:
+            with socket.socket(socket.AF_UNIX) as connection:
+                connection.settimeout(remaining(2))
+                connection.connect(str(endpoint))
+                connection.sendall(record["token"].encode())
+        except (ConnectionRefusedError, FileNotFoundError):
+            # A worker that is ending closes its socket before it removes the socket file and
+            # writes .done; wait for that mark instead of reporting a live resource.
+            deadline = time.monotonic() + remaining(4)
+            while not done.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            if done.exists():
+                return
+            raise
         deadline = time.monotonic() + remaining(4)
         while endpoint.exists() and time.monotonic() < deadline:
             time.sleep(0.05)
@@ -294,6 +334,8 @@ def close(path):
                 data["resources"].remove(record)
                 for suffix in RECORD_FILES:
                     (path / (record["id"] + suffix)).unlink(missing_ok=True)
+                if record["kind"] == "process":
+                    socket_path(record["id"]).unlink(missing_ok=True)
                 save(path, data)
             if failures:
                 raise RuntimeError("; ".join(failures))

@@ -38,8 +38,11 @@ class ResourcesTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory(prefix="atr-", dir="/tmp")
         self.root = Path(self.directory.name)
-        self.env = dict(os.environ, AGENT_TUNER_RESOURCE_DIR=str(self.root))
+        self.sockets = self.root / "s"
+        self.env = dict(os.environ, AGENT_TUNER_RESOURCE_DIR=str(self.root),
+                        AGENT_TUNER_SOCKET_DIR=str(self.sockets))
         resources.ROOT = self.root
+        resources.SOCKET_ROOT = self.sockets
         self.scopes = []
         self.checks = []
 
@@ -169,7 +172,7 @@ class ResourcesTest(unittest.TestCase):
         scope = self.scope()
         owned = self.start(scope)
         with socket.socket(socket.AF_UNIX) as connection:
-            connection.connect(str(self.root / scope / (owned["resource"] + ".sock")))
+            connection.connect(str(resources.socket_path(owned["resource"])))
             connection.sendall(b"wrong-token")
         time.sleep(0.1)
         self.assertTrue(alive(owned["pid"]))
@@ -223,6 +226,53 @@ class ResourcesTest(unittest.TestCase):
         self.assertEqual(self.cli("hook", payload=stop).stderr, "")  # Unattributable: SessionEnd reports it.
         self.cli("hook", payload=dict(stop, hook_event_name="SessionEnd"))
         until(lambda: not alive(owned["pid"]))
+
+    def test_malformed_resource_fields_do_not_stop_other_cleanup(self):
+        for name, resources_value in (("a" * 32, 1),
+                                      ("b" * 32, [dict(kind="process", id=None, token="a" * 64)])):
+            broken = self.root / name
+            broken.mkdir()
+            (broken / "owner.json").write_text(json.dumps(dict(
+                version=1, session="native-session-A", closing=True, resources=resources_value)))
+        scope = self.scope()
+        owned = self.start(scope)
+        result = self.cli("hook", payload=dict(session_id="native-session-A", hook_event_name="SessionEnd"))
+        until(lambda: not alive(owned["pid"]))
+        self.assertIn("a" * 32, result.stderr)
+        self.assertIn("b" * 32, result.stderr)
+        self.assertTrue((self.root / ("b" * 32) / "owner.json").exists())  # Preserved, not deleted.
+
+    def test_every_form_of_auto_remove_is_refused(self):
+        scope = self.scope()
+        for argument in ("--rm", "--rm=true", "--rm=false"):
+            with self.assertRaises(ValueError):
+                resources.container(self.root / scope, [argument, "alpine"])
+
+    def test_a_long_resource_root_still_starts_and_closes(self):
+        deep = self.root / ("d" * 60) / ("e" * 60)
+        deep.mkdir(parents=True)
+        env = dict(self.env, AGENT_TUNER_RESOURCE_DIR=str(deep))
+        def cli(*args):
+            return subprocess.run([sys.executable, str(SCRIPT), *args], env=env,
+                                  capture_output=True, text=True, timeout=15)
+        scope = cli("open", "--session", "native-long").stdout.strip()
+        started = cli("start", scope, "--", "sleep", "60")
+        self.assertEqual(started.returncode, 0, started.stderr)
+        pid = json.loads(started.stdout)["pid"]
+        closed = cli("close", scope)
+        self.assertIn("closed", closed.stdout, closed.stderr)
+        until(lambda: not alive(pid))
+
+    def test_close_racing_a_finishing_worker_still_closes(self):
+        # A worker that is ending closes its socket before it removes the socket file and marks
+        # the resource done; a close arriving in that gap must wait for the mark, not fail.
+        for _ in range(8):
+            scope = self.scope()
+            self.start(scope, ["sleep", "0.2"])
+            time.sleep(0.2)
+            result = self.cli("close", scope, ok=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.state(scope)["resources"], [])
 
     def test_unexpected_docker_output_preserves_the_record(self):
         scope = self.scope()
