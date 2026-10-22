@@ -92,7 +92,9 @@ as a PR review, so there is nothing to publish it on before that.
 ## 5. Deliver through the checked boundary
 
 Push and create or update the PR for each participating repository. Require candidate SHA = pushed
-SHA = current PR head.
+SHA = current PR head. Write the body with the `pr` skill when it is installed; otherwise keep its
+three sections: Summary (the smallest view that shows the change), Evidence (from the verification
+record), Merge Danger (one-way or two-way door, blast radius).
 
 With the PR open, obtain the authoritative external review of the exact candidate:
 
