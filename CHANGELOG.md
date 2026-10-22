@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/clicktronix/codex-tuner/compare/v0.7.0...v0.8.0) (2026-10-22)
+
+
+### Features
+
+* **run:** write the PR body with the pr skill ([#21](https://github.com/clicktronix/codex-tuner/issues/21)) ([b9db20e](https://github.com/clicktronix/codex-tuner/commit/b9db20e35aca6e55f2f1469b05e3bf24458f02d2))
+
 ## [0.7.0](https://github.com/clicktronix/codex-tuner/compare/v0.6.0...v0.7.0) (2026-10-22)
 
 
