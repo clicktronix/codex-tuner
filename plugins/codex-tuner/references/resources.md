@@ -19,9 +19,14 @@ python3 <plugin-root>/scripts/resources.py check <scope> -- <verification-comman
 python3 <plugin-root>/scripts/resources.py close <scope>
 ```
 
+Scopes live under `~/.cache/agent-tuner/resources` (override: `AGENT_TUNER_RESOURCE_DIR`).
+`status <scope>` prints a scope's ownership record.
+
 `start` prints its log path and resource ID. It creates an isolated process group under a small
-supervisor. Close reaches that supervisor through a private authenticated socket; it never adopts
-or signals a PID discovered in the machine's process list. The supervisor also follows workers
+supervisor. Close reaches that supervisor through a private authenticated socket, kept in a short
+private directory `/tmp/atr-<uid>` (override: `AGENT_TUNER_SOCKET_DIR`; it must be a mode-0700
+directory of the current user) rather than in the scope. Close never adopts or signals a PID
+discovered in the machine's process list. The supervisor also follows workers
 whose launcher exits. Keep processes in that group: a server that daemonizes into another session
 needs its own supported lifecycle and must remain outside this helper.
 
@@ -34,8 +39,9 @@ only when cancellation is authorized. Commands that detach into another session 
 own workers or use their existing fixture lifecycle instead.
 
 Use the tuner's `scripts/heavy.sh` for full builds/suites, e2e and service starts. Both tuners use
-the same `CC_TUNER_HEAVY_*` settings and lock directory, so they queue across clients. For a heavy
-check using this scope, put `check` around the actual foreground runner inside the heavy slot:
+the same `CC_TUNER_HEAVY_*` settings (`SLOTS`, default 1; `DIR`, default `~/.cache/cc-tuner/heavy`;
+`POLL`, default 2 s) and lock directory, so they queue across clients. For a heavy check using this
+scope, put `check` around the actual foreground runner inside the heavy slot:
 
 ```bash
 bash <plugin-root>/scripts/heavy.sh --label "<repo>: e2e" -- \
@@ -44,7 +50,10 @@ bash <plugin-root>/scripts/heavy.sh --label "<repo>: e2e" -- \
 
 For a **new disposable** test container, the helper creates it with scope/resource labels, records
 its full ID and local daemon identity before starting it, then stops/removes that exact container
-at close. Pass ordinary `docker create` options before IMAGE; ensure ports and names are task-specific:
+at close. Pass ordinary `docker create` options before IMAGE; ensure ports and names are task-specific.
+Every form of `--rm`, plus `--label-file` and any `dev.agent-tuner.` label, is refused: the helper
+owns disposal and ownership labels, and Docker removing the container itself would leave close
+with an unknown record and could drop anonymous volumes:
 
 ```bash
 python3 <plugin-root>/scripts/resources.py container <scope> -- --name <unique-name> <image> <args>
@@ -58,8 +67,11 @@ teardown; labels alone do not register them with this helper.
 
 Close once consumers finish, **before the final answer**, also when delivery is blocked, cancelled,
 or handed back without a merge. Stop retries only already-requested cleanup; it does not decide
-that a response ends the task. SessionEnd requests cleanup for that session as a fallback. Codex
-may wait until a closed conversation has been idle for 30 minutes, so that fallback is not prompt
+that a response ends the task. Stop closes only scopes already marked closing; SessionEnd closes
+every non-retained scope of that session as a fallback. Both hooks stop after a 25 s deadline (the
+hook timeout is 30 s) and leave unfinished cleanup for the next Stop. A scope whose ownership record
+is malformed is preserved untouched and reported at SessionEnd; one bad scope does not stop the
+others. Codex may wait until a closed conversation has been idle for 30 minutes, so that fallback is not prompt
 task cleanup. A missing lifecycle event or SIGKILL is not a cleanup guarantee.
 
 If the user explicitly wants a preview left running, `retain <scope>` exempts it from automatic
