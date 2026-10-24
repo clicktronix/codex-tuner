@@ -6,7 +6,7 @@ description: Use only when explicitly invoked to turn an issue or rough task int
 # Specify Task
 
 Create one durable contract for `$codex-tuner:run`. This skill owns discovery and readiness; `run`
-owns implementation and delivery. Do not implement or merge here.
+owns implementation and delivery.
 
 ## Understand the task
 
@@ -23,15 +23,14 @@ Resolve:
 - the first failing regression check, or an honest non-code baseline;
 - branch, target, PR, merge strategy, CI, tracker, and any external dependency.
 
-Do not ask for information already in the repository. Use `$grilling` only when a large or genuinely
-unclear task still has product decisions after this reading. Use `$domain-modeling` only when the
-task changes durable vocabulary or context boundaries. Ordinary work should not pay either cost.
+Use `$grilling` only when a large or genuinely unclear task still has product decisions after this
+reading. Use `$domain-modeling` only when the task changes durable vocabulary or context boundaries.
 
 ## Create the branch
 
 Read `../task-flow/SKILL.md`. Resolve and fetch the integration target. If currently on it, create the
 task branch; otherwise verify the current feature branch belongs to this task and is not already
-merged. Never commit the spec to the integration branch.
+merged.
 
 ## Draft the contract
 
@@ -94,14 +93,11 @@ and the workflows that attach to a candidate. `run` passes the mode verbatim to 
 
 For a coupled outcome, the **primary spec** owns the combined acceptance criteria — the checks that
 prove the shared result, not each repository's part — and names the merge order. Each companion
-spec owns its own target, CI mode and review thread. `rollout` is where a dependency that is not a
-commit lives: a schema migration that must be applied before the consumer merges is a prerequisite
-`run` confirms with the named command, not a hope.
+spec owns its own target, CI mode and review thread.
 
 Use `[eyes]` only for irreducible human judgement. `auto_ready: yes` requires a defined PR per
 participating repository, complete verification commands, a nonblank `ci` mode, and a machine
-replacement or dated waiver for every `[eyes]` item. A coupled outcome may span repositories; each
-candidate then carries its own review and CI contract. Documentation-only work may replace RED or
+replacement or dated waiver for every `[eyes]` item. Documentation-only work may replace RED or
 mutation with a concrete baseline and diff check.
 
 Split work into multiple specs only when it needs multiple PRs, repositories, or independently
@@ -111,10 +107,13 @@ second plan file or a custom state machine.
 ## Confirm and commit
 
 Present the decisions, scope, checks, and implementation outline once. Ask the user to approve the
-contract; revise if needed. After approval — with `tracker: gh`, create or update the issue and link
-it and the spec both ways; with `tracker: none`, no issue at any point, the committed spec is the
-record — write the spec, inspect the full diff, and commit only the intended spec and any required
-domain artifacts using repository conventions.
+contract; revise if needed. After approval:
+
+1. Write the spec.
+2. With `tracker: gh`, create or update the issue and link it and the spec both ways. With
+   `tracker: none`, create or update no issue at any point; the committed spec is the record.
+3. Inspect the full diff and commit only the intended spec and any required domain artifacts using
+   repository conventions.
 
 Report the spec path, branch, target, and next command:
 

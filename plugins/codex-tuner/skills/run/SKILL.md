@@ -10,8 +10,7 @@ Without one, derive and commit the short contract described below before impleme
 
 `--auto` authorizes task-scoped commits, push, PR creation/update, and merge after every gate passes.
 It does not authorize deploy, publish, migration, force-push, destructive data operations, or work
-outside the task. It changes workflow policy, not client persistence: for overnight work the user
-must start Codex `/goal` before invoking this skill.
+outside the task. For overnight work the user must start Codex `/goal` before invoking this skill.
 
 ## 1. Establish the contract
 
@@ -21,15 +20,13 @@ when the spec says `auto_ready: no` or an unresolved human-only decision remains
 
 For missing detail under `--auto`, choose the safest in-scope reversible option from repository
 evidence and record the choice. Stop only for missing authority, secrets, irreversible operations,
-or a decision that would materially change scope. Do not turn ordinary implementation questions into
-user interviews. Existing authorization covers routine checks and successful reviews: they do not
-need another confirmation. Batch related pending decisions into one concise request and continue
-the available work meanwhile; do not wait for a finding count or claim a blocked outcome complete.
+or a decision that would materially change scope. Existing authorization covers routine checks and
+successful reviews: they do not need another confirmation. Batch related pending decisions into one
+concise request and continue the available work meanwhile; never claim a blocked outcome complete.
 
 Publish a native plan before changing files. Include contract creation when needed, implementation
 units, verification, acceptance, candidate finalization, review, PR/CI, merge, and cleanup. Keep it
-current throughout the run; do not create a parallel journal or run-state file. Goal mode and the
-native plan own persistence and status.
+current throughout the run; do not create a parallel journal or run-state file.
 
 When no committed spec was supplied, use the contract shape in `../spec/SKILL.md`. Create and commit a
 short task contract on the task branch. In attended mode, present it once for approval; under `--auto`,
@@ -52,13 +49,11 @@ For behavior changes:
 1. Run the named failing check and confirm the expected semantic failure.
 2. Implement the smallest systemic fix within scope.
 3. Run targeted, full, static/build, runtime, and acceptance checks from the contract.
-4. Run the named negative proof when false green is otherwise plausible. Do not invent mutation work
-   for every slice.
+4. Run the named negative proof when false green is otherwise plausible.
 5. Read the complete diff and account for generated or formatter changes.
 
 A failing fixture, syntax error, unavailable service, or unrelated baseline failure is not proof of
-the requested RED. Establish whether a failure is pre-existing from reachability and the task-base
-diff, not merely from file age.
+the requested RED. Judge whether a failure is pre-existing as `../task-flow/SKILL.md` describes.
 
 ## 3. Freeze the candidate
 
@@ -67,7 +62,7 @@ a clean worktree and record the full candidate SHA, base SHA, spec path (or `non
 
 Any later code or test edit creates a new candidate and invalidates tests affected by the edit,
 acceptance, required review, public verdict, CI, and merge readiness. Re-run only the evidence the
-change can invalidate; do not restart unrelated advisory reviews as a ritual.
+change can invalidate.
 
 ## 4. Review proportionally
 
@@ -83,11 +78,10 @@ Add one high-effort owner review only when the candidate:
 - spans repositories/services or changes a major architectural boundary.
 
 That deep pass covers correctness/spec, architecture/systemic effects, security/data, and
-testing/operability. It is one coordinated review of one immutable candidate; do not fan it into a
-large agent swarm. Small ordinary changes pay only the normal review.
+testing/operability. It is one coordinated review of one immutable candidate, not a
+large agent swarm.
 
-The authoritative external review runs in section 5, once the PR exists: its verdict is published
-as a PR review, so there is nothing to publish it on before that.
+The authoritative external review runs in section 5, after the PR exists.
 
 ## 5. Deliver through the checked boundary
 
@@ -102,11 +96,10 @@ With the PR open, obtain the authoritative external review of the exact candidat
 $codex-cc-triage:claude-review --required --base <base-sha> --spec <repo-relative-spec> --thread <task-thread> --cap 5 Review the complete candidate for correctness, architecture, security/data, and testing/operability. End with the required verdict.
 ```
 
-`<base-sha>` is the literal target SHA the candidate was integrated with when the thread opened; it
-stays fixed for that thread. The target may advance afterwards — integrate it, re-verify affected
-evidence and re-review the new candidate in the same thread; do not re-open the review on a new
-base, and do not expect `merge.sh` to demand the PR's current base equal the reviewed one. It
-requires the reviewed base to be a proper ancestor of the candidate, and the head pin does the rest.
+`<base-sha>` is the target SHA the candidate was integrated with when the thread opened; it stays
+fixed for that thread. If the target advances, integrate it, re-verify affected evidence and
+re-review the new candidate in the same thread. `merge.sh` requires only the
+reviewed base to be a proper ancestor of the candidate, and the head pin does the rest.
 
 Publish every completed external verdict immediately, before editing the candidate:
 
@@ -124,16 +117,18 @@ fixes, keep the candidate stable, and report the missing approval once, in one r
 any other pending decision. Missing, stale, unavailable, diverged or capped review blocks merge; it
 does not end the run.
 
-**A coupled outcome across repositories is delivered as a set.** Each candidate carries its own
-review thread and CI mode, but readiness is shared: run `merge.sh --check-only` for **every**
-participating candidate before the first merge, confirm each spec's `rollout` prerequisite with the
-command it names — a migration applied, a flag set, a package published — before the candidate that
-depends on it merges, then merge in the order the primary spec declares. If a later merge refuses,
-stop merging, report exactly which candidates are delivered and which are not, and continue safe
-work on the undelivered ones. Separate green PRs do not establish that the shared result is ready;
-the combined acceptance in the primary spec does. Observe CI in the mode the spec declares — `required`: the target's required
-checks; `any`: every check reported on the head, at least one; `none:<reason>`: no hosted checks, and
-the local substitute recorded first with
+**A coupled outcome across repositories is delivered as a set.** Each candidate keeps its own review
+thread and CI mode, but readiness is shared:
+
+- Run `merge.sh --check-only` for **every** participating candidate before the first merge.
+- Confirm each spec's `rollout` prerequisite with the command it names before the candidate that
+  depends on it merges, then merge in the order the primary spec declares.
+- If a later merge refuses, stop merging, report which candidates are delivered and which are not,
+  and continue safe work on the rest.
+- Separate green PRs do not show the shared result is ready; the primary spec's combined acceptance does.
+
+Observe CI in the mode the spec declares (modes are defined in `../spec/SKILL.md`). For `none:<reason>`,
+record the local substitute first with
 `gh pr comment <pr> --body "codex-tuner-local-ci: <candidate-sha> <what ran, and what it returned>"`.
 Pending, skipped, stale, cancelled, billing-blocked or red is not green in any mode, and `none` never
 outranks a check that ran. If observation contradicts the spec, correct its `ci:` mode before review
@@ -150,19 +145,19 @@ re-reads the companion approval, public verdict, PR head, and CI under the decla
 GitHub's atomic head pin. Do not replace it with raw `gh pr merge` for a codex-tuner run.
 
 Without `--auto`, ask before the first push or PR creation **unless that authorization was already
-given** in this task — an earlier yes is not re-asked — and hand the verified candidate to the user
-for merge rather than merging it yourself. Under `--auto`, continue when the checked boundary passes. After confirmed `MERGED`, reconcile the tracker/spec,
+given** in this task. Then hand the verified candidate to the user for merge rather than merging it
+yourself. Under `--auto`, continue when the checked boundary passes. After confirmed `MERGED`, reconcile the tracker/spec,
 switch to the literal target, pull `--ff-only`, and remove only clean worktrees and proven-merged
 branches.
 
 ## Hard stops
 
-- Scope or authority required beyond the contract.
+- Scope or authority required beyond the contract, including deploy/publish/migration, force-push,
+  bypass flags, broad staging, or direct target commits.
 - Unresolved human-only acceptance under `--auto`.
 - Red or missing verification, review, CI under the declared mode, or DoD evidence — a hard stop for
   **delivery**; safe in-scope work continues and the gap is reported once.
 - Dirty or moved candidate, unexplained files, stale approval, or moved PR head.
-- Deploy/publish/migration, force-push, bypass flags, broad staging, or direct target commits.
 
 Report the completed outcome first, then candidate/PR/CI/review evidence, deferred findings, and
 cleanup. Never claim CI, approval, or merge from an older SHA.
