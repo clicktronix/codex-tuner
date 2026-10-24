@@ -1,6 +1,6 @@
 {
   "name": "codex-tuner",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Codex-native specification and Goal-mode delivery with proportionate review and exact-candidate merge gates.",
   "author": {
     "name": "Clicktronix",
