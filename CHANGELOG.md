@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/clicktronix/codex-tuner/compare/v0.8.0...v0.8.1) (2026-10-24)
+
+
+### Miscellaneous Chores
+
+* release 0.8.1 ([2bad805](https://github.com/clicktronix/codex-tuner/commit/2bad805c0a11b7fa739acfab9c7562226f121efe))
+
 ## [0.8.0](https://github.com/clicktronix/codex-tuner/compare/v0.7.0...v0.8.0) (2026-10-22)
 
 
