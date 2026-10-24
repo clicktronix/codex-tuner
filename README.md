@@ -16,14 +16,12 @@ There is no custom run state, phase machine, journal, or separate plan command. 
 start `/goal` in Codex and then invoke `$codex-tuner:run --auto ...`. `--auto` grants the task-scoped
 delivery actions described by the skill; `/goal` supplies persistence and continuation.
 
-Normal review runs once. A single additional deep owner pass is reserved for sensitive surfaces,
-large diffs, cross-service changes, and major architecture boundaries. The authoritative merge gate
-is the independent `codex-cc-triage` review bound to the exact candidate, tracked spec, public verdict,
-required CI, and PR head.
+Review is proportional and `merge.sh` gates the merge; see sections 4-5 of
+`plugins/codex-tuner/skills/run/SKILL.md`.
 
 ## Repository rules
 
-[Research and design](docs/2026-09-09-agent-rules-research.md).
+Background for maintainers changing agent-rules: [research and design](docs/2026-09-09-agent-rules-research.md).
 
 `agent-rules` loads the target repository's applicable instructions, modular rules, and linked
 contracts before a review or change, including when a task crosses into another repository.
@@ -33,10 +31,9 @@ Run `$codex-tuner:setup install` to add a short loading instruction to the repos
 `AGENTS.md` (or the effective `AGENTS.override.md`). Use `check` instead of `install` for a
 read-only status and diff. Repeated installation is a no-op. Conflicting managed blocks and
 symlinks require inspection and are not overwritten. No rule index or per-repo skill is copied.
-The block precedes existing prose, including its first heading, to fit before Codex's budget
-cutoff; the original prose bytes stay intact. Empty overrides stay empty so `AGENTS.md` remains
-active. `check` distinguishes a missing block from one that only needs moving to the start.
-The instruction remains usable without the plugin; it is guidance, not an enforcement hook.
+The block goes before existing prose to fit Codex's budget cutoff. See
+`plugins/codex-tuner/skills/setup/SKILL.md` for details. The instruction works without the plugin;
+it is guidance, not an enforcement hook.
 
 ## Install
 
@@ -67,8 +64,7 @@ hooks through `/hooks`; enabling a plugin does not trust its hooks automatically
 ## Resource lifecycle
 
 [Task resources](plugins/codex-tuner/references/resources.md) covers task-owned previews, dedicated
-MCP servers and disposable containers. Heavy checks share cc-tuner's machine-wide slots. The helpers
-use Python 3 and no model calls; source changes reach new sessions after a plugin update or reload.
+MCP servers and disposable containers. Heavy checks share cc-tuner's machine-wide slots.
 
 ## Development
 
