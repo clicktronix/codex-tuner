@@ -21,9 +21,8 @@ when the spec says `auto_ready: no` or an unresolved human-only decision remains
 For missing detail under `--auto`, choose the safest in-scope reversible option from repository
 evidence and record the choice. Stop only for missing authority, secrets, irreversible operations,
 or a decision that would materially change scope. Existing authorization covers routine checks and
-successful reviews: they do not
-need another confirmation. Batch related pending decisions into one concise request and continue
-the available work meanwhile; never claim a blocked outcome complete.
+successful reviews: they do not need another confirmation. Batch related pending decisions into one
+concise request and continue the available work meanwhile; never claim a blocked outcome complete.
 
 Publish a native plan before changing files. Include contract creation when needed, implementation
 units, verification, acceptance, candidate finalization, review, PR/CI, merge, and cleanup. Keep it
