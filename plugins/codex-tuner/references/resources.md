@@ -35,8 +35,19 @@ not cancel detached verification: report its scope, and use the repository's can
 only when cancellation is authorized.
 
 Use `scripts/heavy.sh` for full builds/suites, e2e and service starts; its slots are shared with
-cc-tuner. For a heavy check using this scope, put `check` around the actual foreground runner inside
-the heavy slot:
+cc-tuner. Check resource readiness immediately before the foreground workload inside the heavy
+slot, so waiting for the slot does not stale the observations. Inspect the host's available memory,
+CPU headroom and free space on the storage it will use through read-only system metrics. Compare
+those observations with the workload's requirements from repository guidance or earlier runs; use a
+conservative estimate when no prior measurement exists. Record the measurements and readiness
+decision in the existing task context; a free slot alone does not prove capacity. If capacity is
+insufficient, leave the slot without starting the workload, wait for active work to finish and
+recheck before retrying. Report unavailable measurements as uncertainty rather than a successful
+check. Preserve other tasks and their resources throughout; availability is not authorization to
+stop them.
+
+For a heavy check using this scope, put `check` around the actual foreground runner inside the
+heavy slot:
 
 ```bash
 bash <plugin-root>/scripts/heavy.sh --label "<repo>: e2e" -- \

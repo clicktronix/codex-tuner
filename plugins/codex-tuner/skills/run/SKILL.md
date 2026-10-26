@@ -52,6 +52,11 @@ For behavior changes:
 4. Run the named negative proof when false green is otherwise plausible.
 5. Read the complete diff and account for generated or formatter changes.
 
+Before review, follow [acceptance evidence](../../references/verification.md) to reconcile every
+criterion with its observed result and remaining gaps. That reference also defines visual acceptance
+when the task changes a screen or another visual artifact. Keep the record in the existing spec,
+plan or PR Evidence section; carry the same record forward as the candidate advances.
+
 A failing fixture, syntax error, unavailable service, or unrelated baseline failure is not proof of
 the requested RED. Judge whether a failure is pre-existing as `../task-flow/SKILL.md` describes.
 
@@ -69,6 +74,9 @@ change can invalidate.
 Run the repository's `$code-review` once on the first clean candidate, passing the fixed base and
 committed spec explicitly. Validate its findings against the spec, source, and a concrete failure;
 fix valid findings and refute optional or out-of-scope suggestions instead of expanding the task.
+
+Pass the acceptance evidence record with the candidate. Require the reviewer to check that every
+criterion is accounted for, observations support their claims and unproved criteria stay explicit.
 
 Add one high-effort owner review only when the candidate:
 
@@ -91,6 +99,9 @@ three sections: Summary (the smallest view that shows the change), Evidence (fro
 record), Merge Danger (one-way or two-way door, blast radius).
 
 With the PR open, obtain the authoritative external review of the exact candidate:
+
+Include the acceptance evidence record in that review request, with any remaining gaps, so the
+authoritative reviewer judges the same observed outcome as the local review.
 
 ```text
 $codex-cc-triage:claude-review --required --base <base-sha> --spec <repo-relative-spec> --thread <task-thread> --cap 5 Review the complete candidate for correctness, architecture, security/data, and testing/operability. End with the required verdict.
