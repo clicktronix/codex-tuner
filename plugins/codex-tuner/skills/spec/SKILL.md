@@ -23,6 +23,12 @@ Resolve:
 - the first failing regression check, or an honest non-code baseline;
 - branch, target, PR, merge strategy, CI, tracker, and any external dependency.
 
+Derive criteria from the complete agreed outcome and affected consumers. For stateful or shared
+behaviour, account for persistence, concurrent changes, identity boundaries and failure recovery
+where the task can affect them. Name the scenario and deciding observation, not just a green suite.
+For visual work, read the repository's design rules and
+[visual acceptance](../../references/verification.md#visual-acceptance) before defining its criteria.
+
 Use `$grilling` only when a large or genuinely unclear task still has product decisions after this
 reading. Use `$domain-modeling` only when the task changes durable vocabulary or context boundaries.
 
