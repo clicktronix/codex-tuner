@@ -38,7 +38,8 @@ every later review and merge gate.
 Previews, dedicated MCP servers and test containers follow
 [task resources](../../references/resources.md), closing included. Route full builds/suites, e2e and service starts through
 `<plugin-root>/scripts/heavy.sh --label "<repo>: <check>" -- <command>`; its machine-wide slots
-are shared with cc-tuner. Focused checks run directly.
+are shared with cc-tuner. Each such run checks capacity inside its slot, as
+[task resources](../../references/resources.md#heavy-checks) shows. Focused checks run directly.
 
 Work one dependency-safe unit at a time. Parallelize only independent code-writing units with
 non-overlapping ownership; the parent integrates them into one candidate. Testing decisions, review

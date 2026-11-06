@@ -1,7 +1,7 @@
 # Task resources
 
-Read before launching a preview, a dedicated MCP server, disposable test services, or checks that
-consume them. Use existing fixture teardown / `finally` / shell traps first. The helper covers
+Read before launching a preview, a dedicated MCP server, disposable test services, a heavy check, or
+checks that consume them. Use existing fixture teardown / `finally` / shell traps first. The helper covers
 task-owned background lifetimes across tool calls.
 
 Two terms below: a **scope** is one task's ownership record, created by `open` and named by the
@@ -34,6 +34,8 @@ the final check retries cleanup. An interrupt of the caller does
 not cancel detached verification: report its scope, and use the repository's cancellation mechanism
 only when cancellation is authorized.
 
+## Heavy checks
+
 Use `scripts/heavy.sh` for full builds/suites, e2e and service starts; its slots are shared with
 cc-tuner. Check resource readiness immediately before the foreground workload inside the heavy
 slot, so waiting for the slot does not stale the observations. Inspect the host's available memory,
@@ -46,13 +48,22 @@ recheck before retrying. Report unavailable measurements as uncertainty rather t
 check. Preserve other tasks and their resources throughout; availability is not authorization to
 stop them.
 
-For a heavy check using this scope, put `check` around the actual foreground runner inside the
-heavy slot:
+`<readiness-check>` prints those measurements (`vm_stat` or `free -m`, `uptime`, `df -k .`) and exits
+non-zero when they fall short, so the workload starts only after it passes inside the slot:
+
+```bash
+bash <plugin-root>/scripts/heavy.sh --label "<repo>: build" -- \
+  sh -c '<readiness-check> && exec <foreground-runner>'
+```
+
+For a heavy check using a scope, `check` goes around the runner the same way:
 
 ```bash
 bash <plugin-root>/scripts/heavy.sh --label "<repo>: e2e" -- \
-  python3 <plugin-root>/scripts/resources.py check <scope> -- <foreground-e2e-runner>
+  sh -c '<readiness-check> && exec python3 <plugin-root>/scripts/resources.py check <scope> -- <foreground-e2e-runner>'
 ```
+
+## Disposable test containers
 
 For a **new disposable** test container, the helper creates it with scope/resource labels, records
 its full ID and local daemon identity before starting it, then stops/removes that exact container
