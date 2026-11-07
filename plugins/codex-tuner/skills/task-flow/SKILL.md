@@ -56,6 +56,8 @@ failure, and treat board failures after merge as reconciliation debt rather than
 - Decide whether a finding is pre-existing from defect reachability and the task-base diff, not whether
   its file was already present.
 - Review the complete changed surface, including untracked files and consumers of changed contracts.
+- For an audit, map the requested scope to examined areas and evidence in its existing report.
+  Name unread paths and untested scenarios; completion claims cover only what was examined.
 
 ## Plans
 

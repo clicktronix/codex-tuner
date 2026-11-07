@@ -69,6 +69,11 @@ review = text.index("## 4. Review proportionally")
 assert plan < contract < implementation < freeze < review
 PY
 
+# A plain build reaches heavy.sh from run with no preview or container, so the capacity check is
+# bound to the call itself, and the example starts the workload only when the check passes.
+require "$RUN" 'Each such run checks capacity inside its slot'
+require "$PLUGIN/references/resources.md" "<readiness-check> && exec <foreground-runner>"
+
 reject_tree 'runctl\.sh|workflow-contract\.json|run-state\.schema|execute-task-runs|\.agent-state/codex-tuner'
 reject_tree 'Phase [0-9]|authoritative run state|Markdown journal'
 

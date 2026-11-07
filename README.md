@@ -19,6 +19,9 @@ delivery actions described by the skill; `/goal` supplies persistence and contin
 Review is proportional and `merge.sh` gates the merge; see sections 4-5 of
 `plugins/codex-tuner/skills/run/SKILL.md`.
 
+[Acceptance evidence](plugins/codex-tuner/references/verification.md) maps the spec's criteria to
+observed results and remaining gaps, including visual comparison when the task needs it.
+
 ## Repository rules
 
 Background for maintainers changing agent-rules: [research and design](docs/2026-09-09-agent-rules-research.md).
