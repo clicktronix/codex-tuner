@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.2](https://github.com/clicktronix/codex-tuner/compare/v0.8.1...v0.8.2) (2026-11-08)
+
+
+### Bug Fixes
+
+* publish heavy slot owners atomically ([#28](https://github.com/clicktronix/codex-tuner/issues/28)) ([0301196](https://github.com/clicktronix/codex-tuner/commit/0301196c62c6cf31b98d977101a5f9543c18e922))
+
+
+### Documentation
+
+* require acceptance evidence and resource readiness ([#26](https://github.com/clicktronix/codex-tuner/issues/26)) ([fa2cedf](https://github.com/clicktronix/codex-tuner/commit/fa2cedf6ffc49485939475418beae2c469ca016b))
+
 ## [0.8.1](https://github.com/clicktronix/codex-tuner/compare/v0.8.0...v0.8.1) (2026-10-24)
 
 
