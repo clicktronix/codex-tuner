@@ -73,12 +73,29 @@ mkdir -p "$DIR" || die "cannot create $DIR"
 # The program is passed with -c, not on stdin, so the command keeps the caller's stdin after exec.
 read -r -d '' PROG <<'PY' || true
 import fcntl, os, signal, subprocess, sys, time
+from contextlib import contextmanager
 
 mode, d, slots, poll, label = sys.argv[1], sys.argv[2], int(sys.argv[3]), float(sys.argv[4]), sys.argv[5]
 cmd = sys.argv[6:]
 
 def lock_path(i): return os.path.join(d, "slot-%d.lock" % i)
 def owner_path(i): return os.path.join(d, "slot-%d.owner" % i)
+
+@contextmanager
+def owner_guard(i):
+    # Both tuners share this short lock: a reader must not see the workload lock acquired before
+    # its owner is published. It is released before starting work and never replaces the slot lock.
+    with open(owner_path(i) + ".lock", "a") as note:
+        fcntl.flock(note, fcntl.LOCK_EX)
+        yield
+
+def write_owner(i, text):
+    # Replace metadata whole so readers, including older helpers, never see a truncated note.
+    # The workload lock lives on slot-<n>.lock and is unaffected by the replacement.
+    tmp = "%s.%d.tmp" % (owner_path(i), os.getpid())
+    with open(tmp, "w") as f:
+        f.write(text)
+    os.replace(tmp, owner_path(i))
 
 def try_slot(i):
     fd = os.open(lock_path(i), os.O_RDWR | os.O_CREAT, 0o644)
@@ -101,14 +118,15 @@ def group_members(pgid):
 def holders():
     out = []
     for i in range(1, slots + 1):
-        fd = try_slot(i)
-        if fd is not None:
-            os.close(fd)  # free: taking and dropping it changes nothing
-            continue
-        try:
-            with open(owner_path(i)) as f: lines = f.read().split("\n")
-        except OSError:
-            lines = ["unknown holder"]
+        with owner_guard(i):
+            fd = try_slot(i)
+            if fd is not None:
+                os.close(fd)  # free: taking and dropping it changes nothing
+                continue
+            try:
+                with open(owner_path(i)) as f: lines = f.read().split("\n")
+            except OSError:
+                lines = ["unknown holder"]
         who = lines[0].strip() or "unknown holder"
         group = [l[6:] for l in lines if l.startswith("group=")]
         if group:
@@ -125,11 +143,12 @@ if mode == "status":
 said = False
 while True:
     for i in range(1, slots + 1):
-        fd = try_slot(i)
-        if fd is None:
-            continue
-        with open(owner_path(i), "w") as f:
-            f.write("%s supervisor=%d since=%s cwd=%s\n" % (label, os.getpid(), time.strftime("%H:%M:%S"), os.getcwd()))
+        with owner_guard(i):
+            fd = try_slot(i)
+            if fd is None:
+                continue
+            holder = "%s supervisor=%d since=%s cwd=%s\n" % (label, os.getpid(), time.strftime("%H:%M:%S"), os.getcwd())
+            write_owner(i, holder)
         env = dict(os.environ, CC_TUNER_HEAVY_HELD="slot-%d" % i)
         try:
             child = subprocess.Popen(cmd, env=env, pass_fds=(fd,), start_new_session=True)
@@ -137,8 +156,7 @@ while True:
             sys.stderr.write("heavy.sh: cannot run %s: %s\n" % (cmd[0], e))
             sys.exit(127)
         pgid = child.pid
-        with open(owner_path(i), "a") as f:
-            f.write("group=%d\n" % pgid)
+        write_owner(i, holder + "group=%d\n" % pgid)
 
         def members():
             return group_members(pgid)
@@ -174,8 +192,7 @@ while True:
                 os.dup2(null, std)
             for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
                 signal.signal(sig, signal.SIG_DFL)
-            with open(owner_path(i), "w") as f:
-                f.write("%s (exited %d; keeper=%d holds the slot for leftover work) since=%s cwd=%s\ngroup=%d\n"
+            write_owner(i, "%s (exited %d; keeper=%d holds the slot for leftover work) since=%s cwd=%s\ngroup=%d\n"
                         % (label, code, os.getpid(), time.strftime("%H:%M:%S"), os.getcwd(), pgid))
             while members():
                 time.sleep(0.5)
