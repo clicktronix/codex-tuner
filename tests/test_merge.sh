@@ -6,19 +6,29 @@ MERGE="$ROOT/plugins/codex-tuner/scripts/merge.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 REPO="$T/repo"; BIN="$T/bin"; REVIEWER="$T/reviewer"
-mkdir -p "$REPO/docs" "$BIN" "$REVIEWER/scripts"
+mkdir -p "$REPO/docs" "$BIN" "$REVIEWER/scripts" "$REVIEWER/.codex-plugin"
+printf '{"name":"codex-cc-triage","version":"0.7.1"}\n' > "$REVIEWER/.codex-plugin/plugin.json"
+export CODEX_HOME="$T/codex-home"
 
 (
   cd "$REPO"
   git init -q -b main
   git config user.email test@example.com
   git config user.name test
+  git remote add origin https://example.invalid/team/repo.git
+  git config protocol.https.allow never
   printf 'base\n' > base.txt
   git add base.txt
   git commit -qm base
-  printf '# Spec\n\n## Delivery\ntarget: main\n' > docs/spec.md
+  printf '# Spec\n\n## Delivery\ntarget: main\nbranch: task\n' > docs/spec.md
+  for field in host review delivery; do
+    { cat docs/spec.md; printf '%s: one\n%s: two\n' "$field" "$field"; } > "docs/dupe-$field.md"
+  done
+  cp docs/spec.md 'docs/План работы.md'
+  { cat docs/spec.md; printf 'merge: squash\nci: any — all reported checks on the candidate\n'; } > docs/legacy.md
+  printf '# Spec\n\n## Delivery\ntarget: main\nbranch: task\nhost: github\ndelivery: draft\nreview: local\nmerge: squash\nci: required\n' > docs/draft.md
   printf 'candidate\n' > feature.txt
-  git add docs/spec.md feature.txt
+  git add docs feature.txt
   git commit -qm candidate
 )
 SHA="$(git -C "$REPO" rev-parse HEAD)"
@@ -36,18 +46,26 @@ ADVANCED="$(git -C "$REPO" rev-parse advanced)"
 
 cat > "$REVIEWER/scripts/review-state.sh" <<'SH'
 #!/usr/bin/env bash
-printf 'CODEX_CC_REQUIRED_REVIEW APPROVE thread=%s head=%s tree=tree fingerprint=%064d base_sha=%s spec_path=docs/spec.md\n' "$2" "$TEST_SHA" 0 "$TEST_BASE"
+printf 'CODEX_CC_REQUIRED_REVIEW APPROVE thread=%s head=%s tree=%s fingerprint=%064d base_sha=%s spec_path=%s\n' "$2" "$TEST_SHA" "${TEST_TREE:-$(git rev-parse HEAD^{tree})}" 0 "$TEST_BASE" "${TEST_MARKER_SPEC:-docs/spec.md}"
 SH
 chmod +x "$REVIEWER/scripts/review-state.sh"
 
 cat > "$BIN/codex" <<'SH'
 #!/usr/bin/env bash
-printf '{"installed":[{"pluginId":"codex-cc-triage@codex-cc-triage","installed":true,"enabled":true,"source":{"path":"%s"}}]}\n' "$TEST_REVIEWER"
+if [ "${TEST_VERSION:-}" = legacy ]; then
+  printf '{"installed":[{"pluginId":"codex-cc-triage@codex-cc-triage","installed":true,"enabled":true,"source":{"path":"%s"}}]}\n' "$TEST_REVIEWER"
+  exit 0
+fi
+printf '{"installed":[{"pluginId":"codex-cc-triage@codex-cc-triage","installed":true,"enabled":true,"version":"%s","source":{"path":"%s"}}]}\n' "${TEST_VERSION:-0.7.1}" "$TEST_REVIEWER"
 SH
 chmod +x "$BIN/codex"
 
 cat > "$BIN/gh" <<'SH'
 #!/usr/bin/env bash
+case "$1" in
+  pr) [[ " $* " = *' --repo example.invalid/team/repo '* ]] || exit 7 ;;
+  api) [[ " $* " = *' --hostname example.invalid '* ]] || exit 7 ;;
+esac
 case "$1 $2" in
   'pr view')
     count=0
@@ -61,14 +79,25 @@ case "$1 $2" in
     if [ "${TEST_MOVE_BASE_AFTER_CHECK:-}" = 1 ] && [ "$count" -gt 1 ]; then
       base=0000000000000000000000000000000000000000
     fi
-    comments='[]'
-    if [ "${TEST_LOCAL_CI:-}" = 1 ]; then
-      comments="$(printf '[{"author":{"login":"tester"},"body":"codex-tuner-local-ci: %s make test → ok\\nmore"}]' "$head")"
-    elif [ "${TEST_LOCAL_CI:-}" = stale ]; then
-      comments='[{"author":{"login":"tester"},"body":"codex-tuner-local-ci: 0000000000000000000000000000000000000000 make test → ok"}]'
-    fi
-    printf '{"baseRefName":"%s","baseRefOid":"%s","headRefOid":"%s","reviews":[{"commit":{"oid":"%s"},"author":{"login":"tester"},"submittedAt":"2026-08-31T00:00:00Z","body":"codex-tuner-verdict: %s %s\\nreview"}],"comments":%s}\n' \
-      "${TEST_PR_BASE_REF:-main}" "$base" "$head" "$head" "${TEST_VERDICT:-APPROVE}" "$head" "$comments"
+    target="${TEST_PR_BASE_REF:-main}"
+    if [ "${TEST_RETARGET_AFTER_CHECK:-}" = 1 ] && [ "$count" -gt 1 ]; then target=other; fi
+    printf '{"state":"OPEN","isDraft":%s,"isCrossRepository":false,"baseRefName":"%s","baseRefOid":"%s","headRefName":"task","headRefOid":"%s"}\n' "${TEST_DRAFT:-false}" "$target" "$base" "$head"
+    ;;
+  'api repos/team/repo/issues/1/comments')
+    sha="$TEST_SHA"
+    case "${TEST_LOCAL_CI:-}" in
+      1|other) ;;
+      stale) sha=0000000000000000000000000000000000000000 ;;
+      *) sha="" ;;
+    esac
+    user=tester
+    [ "${TEST_LOCAL_CI:-}" != other ] || user=stranger
+    jq -nc --arg sha "$sha" --arg user "$user" --arg verified "${TEST_VERIFIED:-}" '
+      [[(if $sha != "" then {user:{login:$user},body:("codex-tuner-local-ci: " + $sha + " make test → ok")} else empty end),
+        (if $verified != "" then {user:{login:"tester"},body:("codex-tuner-verified: " + $verified + "\ntest passed")} else empty end)]]'
+    ;;
+  'api repos/team/repo/pulls/1/reviews')
+    printf '[[{"id":12,"user":{"login":"tester"},"commit_id":"%s","state":"COMMENTED","submitted_at":"2026-08-31T00:00:00Z","body":"codex-tuner-verdict: %s %s\\nreview"}]]\n' "$TEST_SHA" "${TEST_VERDICT:-APPROVE}" "$TEST_SHA"
     ;;
   'api user') printf 'tester\n' ;;
   'pr checks')
@@ -80,6 +109,7 @@ case "$1 $2" in
       exit 1
     fi
     printf '[{"name":"test","bucket":"%s"}]\n' "${TEST_CHECK_BUCKET:-pass}"
+    exit "${TEST_CHECK_RC:-0}"
     ;;
   'pr merge')
     [ "$3" = 1 ] && [ "$4" = --squash ] && [ "$5" = --match-head-commit ] \
@@ -103,7 +133,7 @@ run_merge() {
     TEST_MOVE_BASE_AFTER_CHECK="${TEST_MOVE_BASE_AFTER_CHECK:-}" \
     TEST_CHECKS_ARGV="$T/checks-argv" \
     "$MERGE" "$@" --check-only "${TEST_PR:-1}" squash "$cand" task-review \
-    "${TEST_ARG_BASE:-$BASE}" docs/spec.md)
+    "${TEST_ARG_BASE:-$BASE}" "${TEST_SPEC:-docs/spec.md}")
 }
 
 output="$(run_merge)"
@@ -247,6 +277,11 @@ for bucket in fail pending skipping cancel; do
   grep -q 'required checks are not passing' "$T/error"
 done
 
+if TEST_CHECK_BUCKET=pending TEST_CHECK_RC=8 run_merge 2>"$T/error"; then
+  echo "FAIL gh pending response passed"; exit 1
+fi
+grep -q 'required checks are not passing' "$T/error"
+
 if TEST_MOVE_AFTER_CHECK=1 run_merge 2>"$T/error"; then
   echo "FAIL moved PR head passed check-only revalidation" >&2
   exit 1
@@ -258,6 +293,44 @@ if TEST_MOVE_BASE_AFTER_CHECK=1 run_merge 2>"$T/error"; then
   exit 1
 fi
 grep -q 'changed while merge readiness was checked' "$T/error"
+
+TEST_VERSION=legacy TEST_SPEC=docs/legacy.md TEST_MARKER_SPEC=docs/legacy.md run_merge --ci any >/dev/null
+if TEST_VERSION=8.0.0 run_merge 2>"$T/error"; then echo 'FAIL registry version mismatch accepted'; exit 1; fi
+grep -q 'does not match' "$T/error"
+cache="$CODEX_HOME/plugins/cache/codex-cc-triage/codex-cc-triage/8.0.0"
+mkdir -p "$cache"
+cp -R "$REVIEWER/." "$cache"
+printf '{"name":"codex-cc-triage","version":"8.0.0"}\n' > "$cache/.codex-plugin/plugin.json"
+TEST_VERSION=8.0.0 run_merge >/dev/null
+for field in host review delivery; do
+  if TEST_SPEC="docs/dupe-$field.md" run_merge 2>"$T/error"; then echo "FAIL ambiguous $field"; exit 1; fi
+  grep -q "duplicate or empty spec field $field" "$T/error"
+done
+output="$(TEST_SPEC='docs/План работы.md' TEST_MARKER_SPEC='docs/План работы.md' run_merge)"
+[[ "$output" = *'would merge 1'* ]]
+for envcase in wrong-tree wrong-spec; do
+  if [ "$envcase" = wrong-tree ]; then export TEST_TREE="$BASE"; else export TEST_MARKER_SPEC='docs/wrong plan.md'; fi
+  if run_merge 2>"$T/error"; then echo "FAIL $envcase passed" >&2; exit 1; fi
+  grep -q 'does not cover' "$T/error"
+  unset TEST_TREE TEST_MARKER_SPEC
+done
+if TEST_SPEC=docs/draft.md run_merge 2>"$T/error"; then echo 'FAIL unverified new-format spec passed' >&2; exit 1; fi
+grep -q 'missing verification evidence' "$T/error"
+TEST_SPEC=docs/draft.md TEST_VERIFIED="$SHA" run_merge >/dev/null
+if TEST_SPEC=docs/draft.md run_merge --ci any 2>"$T/error"; then echo 'FAIL weaker CI mode passed' >&2; exit 1; fi
+grep -q 'CI mode differs' "$T/error"
+if (cd "$REPO" && "$MERGE" 1 squash "$SHA" local "$BASE" docs/draft.md) 2>"$T/error"; then echo 'FAIL draft authorized merge' >&2; exit 1; fi
+grep -q 'merge is reserved' "$T/error"
+if TEST_NO_CHECKS=1 TEST_LOCAL_CI=other run_merge --ci none:manual 2>"$T/error"; then echo 'FAIL another author supplied local CI' >&2; exit 1; fi
+git -C "$REPO" remote set-url --add --push origin https://example.invalid/team/other.git
+if run_merge 2>"$T/error"; then echo 'FAIL split fetch/push routes passed' >&2; exit 1; fi
+grep -q 'fetch and push' "$T/error"
+git -C "$REPO" config --unset-all remote.origin.pushurl
+
+if TEST_RETARGET_AFTER_CHECK=1 run_merge 2>"$T/error"; then echo 'FAIL PR retargeted to a different branch at the same SHA'; exit 1; fi
+grep -q 'changed while merge readiness was checked' "$T/error"
+if TEST_DRAFT=true run_merge 2>"$T/error"; then echo 'FAIL draft reported ready to merge'; exit 1; fi
+grep -q 'still a draft' "$T/error"
 
 # The integrated half: after the workflow merges the advanced target into the candidate and the new
 # SHA is approved, the reviewed base is still a proper ancestor and the target is now inside the

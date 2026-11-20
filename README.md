@@ -1,23 +1,17 @@
 # codex-tuner
 
-Codex-native skills for turning a task into a verified pull request without rebuilding Codex's own
-task runtime.
+Codex skills for planning, implementing and verifying a change through its authorized delivery point.
 
 ## Flow
 
-- `$codex-tuner:spec <issue | description>` reads the repository, resolves material decisions, and
-  commits one executable spec. It uses grilling or domain modeling only when the task needs them.
-- `$codex-tuner:run [--auto] <spec | task>` commits a short contract first when given a task, then
-  uses Codex's native plan and Goal mode to implement, test, review, merge through a checked boundary,
-  and clean up.
+- `$codex-tuner:spec <issue | description>` prepares an executable spec. `--groom <issue>` records decisions for later. An implementation request continues into `run` once the scope is settled.
+- `$codex-tuner:run [--local-only | --auto] <spec | task>` uses the native plan, verifies the result and follows the agreed local, draft, PR/MR or merge boundary.
+- `$codex-tuner:verify-feature` verifies the requested behaviour. `$codex-tuner:deep-review` audits a candidate and its affected consumers. Both also work as standalone requests.
 - `$codex-tuner:task-flow` supplies branch, PR, tracker, merge, and cleanup conventions.
 
-There is no custom run state, phase machine, journal, or separate plan command. For unattended work,
-start `/goal` in Codex and then invoke `$codex-tuner:run --auto ...`. `--auto` grants the task-scoped
-delivery actions described by the skill; `/goal` supplies persistence and continuation.
+Codex can select these skills from the task description. For unattended work the user may also start a native goal. The delivery scope and repository permissions apply in either mode.
 
-Review is proportional and `merge.sh` gates the merge; see sections 4-5 of
-`plugins/codex-tuner/skills/run/SKILL.md`.
+Review depth follows the risk of the change. The [run skill](plugins/codex-tuner/skills/run/SKILL.md) describes review evidence and the checked delivery routes.
 
 [Acceptance evidence](plugins/codex-tuner/references/verification.md) maps the spec's criteria to
 observed results and remaining gaps, including visual comparison when the task needs it.
@@ -40,14 +34,14 @@ it is guidance, not an enforcement hook.
 
 ## Install
 
-Install the companion reviewer:
+For workflows that use Claude review, install the companion reviewer:
 
 ```bash
 codex plugin marketplace add clicktronix/codex-cc-triage --ref main
 codex plugin add codex-cc-triage@codex-cc-triage
 ```
 
-Install the review and optional discovery skills:
+To use the optional review and discovery skills:
 
 ```bash
 npx skills@latest add mattpocock/skills --global --agent codex \
@@ -75,8 +69,9 @@ MCP servers and disposable containers. Heavy checks share cc-tuner's machine-wid
 bash tests/run.sh
 ```
 
-CI runs the same suite on Ubuntu and macOS. PR titles use Conventional Commit subjects because squash
-merges feed release-please.
+CI runs the same suite on Ubuntu and macOS. With Codex CLI and a companion checkout, run `bash tests/companion-integration.sh ../codex-cc-triage` to exercise the producing reviewer and consuming merge gate together. It uses an isolated registry, a local Git repository and the companion's offline Claude fixture.
+
+PR titles use Conventional Commit subjects because squash merges feed release-please.
 
 ## License
 

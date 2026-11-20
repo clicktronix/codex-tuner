@@ -7,7 +7,7 @@ SPEC="$PLUGIN/skills/spec/SKILL.md"
 RUN="$PLUGIN/skills/run/SKILL.md"
 
 require() {
-  grep -qF "$2" "$1" || { echo "FAIL missing contract: $2" >&2; exit 1; }
+  grep -qF -- "$2" "$1" || { echo "FAIL missing contract: $2" >&2; exit 1; }
 }
 reject_tree() {
   if grep -R -n -E "$1" "$PLUGIN" --exclude='*.svg'; then
@@ -16,63 +16,28 @@ reject_tree() {
   fi
 }
 
-require "$SPEC" 'The implementation outline is guidance for Codex'
-require "$SPEC" 'A skill cannot switch the client into Goal mode itself.'
-require "$RUN" 'do not create a parallel journal or run-state'
-require "$RUN" 'changes at least 15 production files or 500 production lines'
-require "$RUN" 'large agent swarm'
-require "$RUN" 'Publish every completed external verdict immediately'
-require "$RUN" 'Never reset a capped thread to seek an easier verdict.'
-require "$RUN" 'At the cap, stop paid review attempts and delivery — not the work.'
-require "$RUN" 'they do not
-need another confirmation'
-require "$RUN" 'merge.sh" --ci <mode>'
-require "$RUN" 'unless that authorization was already
-given'
-require "$RUN" 'reviewed base to be a proper ancestor of the candidate'
-require "$RUN" 'delivered as a set'
-require "$RUN" 'rollout` prerequisite'
-require "$SPEC" 'rollout: <prerequisite'
-if grep -qF 'After approval, create or update the issue, write the spec' "$SPEC"; then
-  echo "FAIL spec still creates an issue unconditionally after approval" >&2; exit 1
-fi
-if grep -qF 'run both typecheck and lint' "$PLUGIN/skills/task-flow/SKILL.md"; then
-  echo "FAIL task-flow still prescribes typecheck+lint for every repository" >&2; exit 1
-fi
-if grep -qF 'use issues without project commands' "$PLUGIN/skills/task-flow/SKILL.md"; then
-  echo "FAIL task-flow still conflates tracker: none with board: none" >&2; exit 1
-fi
-require "$SPEC" 'ci: <mode> — <the checks, and how to observe them>'
-require "$SPEC" 'a defined PR per
-participating repository'
-TASK_FLOW="$PLUGIN/skills/task-flow/SKILL.md"
-require "$TASK_FLOW" 'Tracking a defect does not resolve it.'
-require "$TASK_FLOW" 'one record for the
-class, not one issue per finding'
-if grep -qF 'File each deferred review finding as its own issue' "$TASK_FLOW"; then
-  echo "FAIL task-flow still files one issue per deferred finding" >&2; exit 1
-fi
-if grep -qF 'capped review is a hard stop' "$RUN"; then
-  echo "FAIL run still treats a capped review as a stop for all work" >&2; exit 1
-fi
-
-python3 - "$RUN" <<'PY'
-from pathlib import Path
-import sys
-
-text = Path(sys.argv[1]).read_text(encoding="utf-8")
-plan = text.index("Publish a native plan before changing files")
-contract = text.index("When no committed spec was supplied")
-implementation = text.index("## 2. Implement and prove")
-freeze = text.index("## 3. Freeze the candidate")
-review = text.index("## 4. Review proportionally")
-assert plan < contract < implementation < freeze < review
-PY
-
-# A plain build reaches heavy.sh from run with no preview or container, so the capacity check is
-# bound to the call itself, and the example starts the workload only when the check passes.
-require "$RUN" 'Each such run checks capacity inside its slot'
+# Verify the public routing schema and reachable commands. Runtime contracts are
+# exercised by the merge, receipt and resource suites.
+ROUTES="$PLUGIN/skills/run/references/delivery.md"
+require "$SPEC" 'host: github|gitlab|local|pending'
+require "$SPEC" 'delivery: local|draft|pr|merge'
+require "$SPEC" 'review: claude|local'
+require "$SPEC" 'ci: <mode>'
+require "$RUN" '--local-only'
+require "$RUN" 'references/delivery.md'
+require "$RUN" '../deep-review/SKILL.md'
+require "$RUN" '../verify-feature/SKILL.md'
+require "$RUN" 'review-state.sh renew'
+require "$ROUTES" 'scripts/merge.sh'
+require "$ROUTES" 'scripts/local-merge.py'
+require "$ROUTES" 'scripts/finish-review.py'
+require "$ROUTES" 'glab api "$MR_API/merge"'
+require "$RUN" 'scripts/heavy.sh'
 require "$PLUGIN/references/resources.md" "<readiness-check> && exec <foreground-runner>"
+for file in scripts/check-review.sh scripts/finish-review.py scripts/local-merge.py scripts/destination.py; do
+  test -x "$PLUGIN/$file"
+done
+if grep -Fq -- '--cap 5' "$RUN"; then echo "FAIL delivery overrides the saved reviewer budget" >&2; exit 1; fi
 
 reject_tree 'runctl\.sh|workflow-contract\.json|run-state\.schema|execute-task-runs|\.agent-state/codex-tuner'
 reject_tree 'Phase [0-9]|authoritative run state|Markdown journal'

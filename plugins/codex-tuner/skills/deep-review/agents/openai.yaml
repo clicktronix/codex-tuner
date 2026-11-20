@@ -1,0 +1,8 @@
+interface:
+  display_name: "Deep Review"
+  short_description: "Audit a candidate and its affected consumers"
+  default_prompt: "Use $codex-tuner:deep-review to review the candidate against its spec and verification evidence."
+policy:
+  products:
+    - "CODEX"
+  allow_implicit_invocation: true

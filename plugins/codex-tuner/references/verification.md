@@ -2,8 +2,11 @@
 
 Read before declaring a task verified or sending its candidate to review. The spec owns acceptance
 criteria, the plan owns execution order, and the existing verification record connects the criteria
-to observations. Update that record in place; use the repository's current location, otherwise the
-PR Evidence section. Before a PR exists, keep it in the existing spec or plan and carry it forward.
+to observations. Write the record to a private scratch file outside the candidate. A clean committed candidate's first
+line is `codex-tuner-verified: <full candidate SHA>`. For uncommitted work, identify the base and
+actual worktree diff (including new files). Keep that record local. After a change, verify which
+observations still apply and write the record for the new candidate. Publish the reviewed file as
+evidence only when that write is authorized.
 
 ## Account for every criterion
 
