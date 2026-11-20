@@ -18,7 +18,7 @@ deploy, publish, migration, force-push, or destructive cleanup.
   `<type>/<short-slug>` and explain why in the PR.
 - Commit: Conventional Commits, one logical change per commit. Mark breaking changes with `!` plus a
   `BREAKING CHANGE:` migration footer.
-- One task branch and PR attach to the implemented sub-issue, not its parent epic.
+- For authorized hosted delivery, the task branch and PR/MR attach to the implemented sub-issue, not its parent epic.
 - Use `Closes`/`Fixes` only for complete scope and `Refs` for partial or stacked scope.
 - PR verification is a link to the checks attached to the candidate under the spec's `ci` mode; do
   not paste long transcripts. A pending or paused check is not absent CI. Modes are defined in
@@ -27,8 +27,10 @@ deploy, publish, migration, force-push, or destructive cleanup.
 
 ## Issues, epics, and boards
 
-Use an epic with native sub-issues when work spans repositories, PRs, or independently reviewed phases.
-Otherwise use one issue. Add the issue to the configured board with Status and Priority. Record prior
+Follow the spec's tracker and write permissions. Under `tracker: none`, keep the task in its spec.
+Use an existing local issue store for `local`, GitLab issues for `glab` and GitHub issues for `gh`.
+With tracker writes authorized, use an epic or parent issue for independently reviewed phases.
+Update Status and Priority only on a configured, authorized board. Record prior
 status before moving it to In Progress. After a confirmed merge, complete the card only for a closing PR;
 leave referenced partial work In Progress. With `board: none` issues exist but no project command
 runs (`tracker: none` is defined in `../spec/SKILL.md`).
@@ -61,9 +63,7 @@ failure, and treat board failures after merge as reconciliation debt rather than
 
 ## Plans
 
-Store durable specs in `wiki/PLANS/` when a wiki exists, otherwise `docs/PLANS/`. Link issue and spec in
-both directions. Move a completed spec to the matching `ARCHIVE/PLANS/` in the PR that completes it;
-never create a standalone archival PR.
+Use the repository's spec and archive conventions. Without one, use `wiki/PLANS/` when a wiki exists, otherwise `docs/PLANS/`. Link existing issues when tracker writes are authorized. If the completing PR archives its spec, move it before pinning the review base and spec path. For a local handoff, keep the working spec in place.
 
 ## Merge and cleanup
 
@@ -72,8 +72,11 @@ Previews, dedicated MCP servers and test containers follow
 
 - Feature to integration branch: squash and delete the remote branch unless repo policy says otherwise.
 - Stacked PRs: preserve ancestry with merge commits inside the stack; squash only when the stack lands.
-- Verify the PR reads `MERGED`, then switch to its literal target and `git pull --ff-only`.
-- Inspect worktrees before removal. Remove only a clean worktree whose branch is proven merged, prune
-  stale registrations, delete merged local branches with `-d`, and fetch with prune.
+- For a GitHub PR verify it reads `MERGED`, then switch to its literal target and `git pull --ff-only`.
+- GitLab requires the observed MR state `merged`. For a local fast-forward confirm the literal
+  target ref now names the candidate. Remote synchronization applies only to a hosted route.
+- Before removing an owned clean worktree or branch, check its tip still equals the delivered
+  head. Preserve later commits and unrelated changes. For squash merges use the forge's recorded
+  merged head as evidence. Keep draft and handoff branches available to their owner.
 - A branch whose PR already merged is finished. Put genuinely new commits on a fresh branch rather than
   rebasing already-squashed history and risking regressions.

@@ -34,6 +34,10 @@ the final check retries cleanup. An interrupt of the caller does
 not cancel detached verification: report its scope, and use the repository's cancellation mechanism
 only when cancellation is authorized.
 
+## Concurrent tasks
+
+Before reusing a branch or checkout, inspect `git worktree list --porcelain`, its status and the task's existing PR or MR. A worktree entry identifies a checkout. Use available session or task context to establish who is working in it. Preserve unfamiliar edits and running services. Give independent tasks distinct worktrees, paths and resource scopes. When ownership overlaps, continue on disjoint work and resolve the specific conflict with its owner.
+
 ## Heavy checks
 
 Use `scripts/heavy.sh` for full builds/suites, e2e and service starts; its slots are shared with

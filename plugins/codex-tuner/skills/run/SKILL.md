@@ -1,175 +1,125 @@
 ---
 name: run
-description: Use only when explicitly invoked to implement a committed spec or a concrete task through tests, exact-candidate review, required CI, merge, and cleanup.
+description: Implement or resume an authorized task from its spec, verify the actual changes, review the candidate and carry delivery through the permitted stage.
 ---
 
-# Run Task
+# Run a task
 
-Parse `[--auto] <spec-path | concrete task>`. When a committed spec exists, it is authoritative.
-Without one, derive and commit the short contract described below before implementation.
-
-`--auto` authorizes task-scoped commits, push, PR creation/update, and merge after every gate passes.
-It does not authorize deploy, publish, migration, force-push, destructive data operations, or work
-outside the task. For overnight work the user must start Codex `/goal` before invoking this skill.
+Use `[--auto] [--local-only] [spec path or task]`. Resume the current task from its spec,
+branch, open PR/MR and existing review thread. If the change already landed, reconcile the
+result. A request for planning or review alone ends with that deliverable.
 
 ## 1. Establish the contract
 
-Read repository instructions, `../task-flow/SKILL.md`, the spec when supplied, relevant code and
-tests, and current dependency docs when required. Verify the task branch and target. Refuse `--auto`
-when the spec says `auto_ready: no` or an unresolved human-only decision remains.
+Read the applicable repository rules, [task flow](../task-flow/SKILL.md), the spec and its affected
+code and consumers. Check the target, branch and delivery scope in each participating checkout.
+When the user asked to implement a task without a spec, write the short [task contract](../spec/SKILL.md)
+on the task branch and proceed with decisions already supplied. Ask only for a consequential missing
+decision. When commits are reserved, use a working spec and `--local-only`.
 
-For missing detail under `--auto`, choose the safest in-scope reversible option from repository
-evidence and record the choice. Stop only for missing authority, secrets, irreversible operations,
-or a decision that would materially change scope. Existing authorization covers routine checks and
-successful reviews: they do not need another confirmation. Batch related pending decisions into one
-concise request and continue the available work meanwhile; never claim a blocked outcome complete.
+Use the client's native plan for substantial work. Track units, acceptance, verification, review
+and the authorized handoff there. Use Goal mode when the user requested it and the host provides
+it. An ordinary run can finish in the current session. Existing task and repository permissions
+govern commits, remote writes, board changes, merge and deployment independently.
 
-Publish a native plan before changing files. Include contract creation when needed, implementation
-units, verification, acceptance, candidate finalization, review, PR/CI, merge, and cleanup. Keep it
-current throughout the run; do not create a parallel journal or run-state file.
+| Delivery scope | Last authorized action |
+| --- | --- |
+| `local` or `--local-only` | Implement, test and review locally. Preserve uncommitted changes when commits are reserved. |
+| `draft` | Push the task branch, open or update its draft PR/MR, attach authorized evidence, and leave it a draft. |
+| `pr` | Deliver the requested PR/MR, including readiness and observing applicable CI. Hand over merge readiness. |
+| `merge` | Recheck the route and merge the verified head when the user authorized merge. |
 
-When no committed spec was supplied, use the contract shape in `../spec/SKILL.md`. Create and commit a
-short task contract on the task branch. In attended mode, present it once for approval; under `--auto`,
-resolve ordinary in-scope choices from repository evidence. Use that tracked path as the spec for
-every later review and merge gate.
+An explicit PR request covers its task branch push and ordinary evidence comments. Use `--auto`
+only for requested unattended delivery. It can authorize merge within the agreed scope. A narrower
+request or repository rule wins. A planned stage describes the intended destination. Only the
+user's authorization permits widening it. For `auto_ready: no`, resolve the listed prerequisites
+within the current task and recheck readiness before the stage that depends on them.
+Keep doing local work when authentication, a remote,
+a human acceptance step or publication permission blocks a later stage. Ask once when that step
+is necessary and the user has not already reserved it for themselves.
 
 ## 2. Implement and prove
 
-Previews, dedicated MCP servers and test containers follow
-[task resources](../../references/resources.md), closing included. Route full builds/suites, e2e and service starts through
-`<plugin-root>/scripts/heavy.sh --label "<repo>: <check>" -- <command>`; its machine-wide slots
-are shared with cc-tuner. Each such run checks capacity inside its slot, as
-[task resources](../../references/resources.md#heavy-checks) shows. Focused checks run directly.
+Run the check that exposes the original behavior. Confirm the expected failure, implement the
+change and run the checks that exercise it. For docs or configuration, use an observable baseline.
+Read the whole diff, including untracked paths and generated outputs. Follow
+[verification](../../references/verification.md) for negative proof and acceptance.
 
-Work one dependency-safe unit at a time. Parallelize only independent code-writing units with
-non-overlapping ownership; the parent integrates them into one candidate. Testing decisions, review
-decisions, delivery, and merge remain sequential.
+Use independent units with disjoint ownership when delegated work is authorized and useful.
+The parent integrates and verifies their combined result. For long checks, wait on the same job
+and inspect its result. Follow [task resources](../../references/resources.md) for previews and
+containers. Run heavy checks as
+`<plugin-root>/scripts/heavy.sh --label "<repo>: <check>" -- <command>`.
 
-For behavior changes:
+## 3. Verify the actual candidate
 
-1. Run the named failing check and confirm the expected semantic failure.
-2. Implement the smallest systemic fix within scope.
-3. Run targeted, full, static/build, runtime, and acceptance checks from the contract.
-4. Run the named negative proof when false green is otherwise plausible.
-5. Read the complete diff and account for generated or formatter changes.
+Inspect tracked, staged and untracked changes. When commits are permitted, stage the intended
+paths, review the staged diff and commit on the task branch. Finalize the spec path before
+pinning review. Record the base, full HEAD and tree of the clean candidate. When offline,
+use the known base and record that target synchronization is pending.
 
-Before review, follow [acceptance evidence](../../references/verification.md) to reconcile every
-criterion with its observed result and remaining gaps. That reference also defines visual acceptance
-when the task changes a screen or another visual artifact. Keep the record in the existing spec,
-plan or PR Evidence section; carry the same record forward as the candidate advances.
-
-A failing fixture, syntax error, unavailable service, or unrelated baseline failure is not proof of
-the requested RED. Judge whether a failure is pre-existing as `../task-flow/SKILL.md` describes.
-
-## 3. Freeze the candidate
-
-Stage explicit paths only, inspect the staged diff, and commit using repository conventions. Require
-a clean worktree and record the full candidate SHA, base SHA, spec path (or `none`), and PR number.
-
-Any later code or test edit creates a new candidate and invalidates tests affected by the edit,
-acceptance, required review, public verdict, CI, and merge readiness. Re-run only the evidence the
-change can invalidate.
+Run [verify-feature](../verify-feature/SKILL.md) on that candidate or the actual uncommitted
+worktree. Pass the spec, base, checks already run, the working directory and a private scratch
+file outside the checkout. Read the resulting evidence. Preserve every unproved criterion
+and any user decision about it. Reuse observations while their inputs are unchanged. A fix
+needs verification of affected criteria and a record identifying the new candidate.
 
 ## 4. Review proportionally
 
-Run the repository's `$code-review` once on the first clean candidate, passing the fixed base and
-committed spec explicitly. Validate its findings against the spec, source, and a concrete failure;
-fix valid findings and refute optional or out-of-scope suggestions instead of expanding the task.
+Review the complete task diff for the agreed outcome and repository standards. Use
+[deep-review](../deep-review/SKILL.md) for sensitive changes, a large production diff, or a
+cross-service boundary. Use the ordinary repository review for the rest. If a reviewer is
+unavailable, do the local review yourself. Validate findings at their source and consumers,
+fix regressions within scope and retain evidence for refuted findings.
 
-Pass the acceptance evidence record with the candidate. Require the reviewer to check that every
-criterion is accounted for, observations support their claims and unproved criteria stay explicit.
+For a dirty or local-only handoff, return the base, changed and new paths, acceptance evidence,
+findings and the next reserved action. A worktree review can include uncommitted files.
+Only a clean commit can receive an exact-SHA approval. When publication is reserved but
+committed-candidate review is authorized, record that review locally without creating a PR.
 
-Add one high-effort owner review only when the candidate:
+## 5. Review rounds and delivery
 
-- touches authentication, authorization, secrets, cryptography, destructive data, migrations,
-  public or persisted contracts, money, infrastructure, release, or security-sensitive input;
-- changes at least 15 production files or 500 production lines;
-- spans repositories/services or changes a major architectural boundary.
+Use the spec's review owner. `review: claude` (the default for older specs) uses the authorized
+read-only companion. `review: local` uses the owner's exact-candidate judgement when the owner
+selected that mode. A missing installation or an exhausted grant leaves required approval pending.
 
-That deep pass covers correctness/spec, architecture/systemic effects, security/data, and
-testing/operability. It is one coordinated review of one immutable candidate, not a
-large agent swarm.
-
-The authoritative external review runs in section 5, after the PR exists.
-
-## 5. Deliver through the checked boundary
-
-Push and create or update the PR for each participating repository. Require candidate SHA = pushed
-SHA = current PR head. Write the body with the `pr` skill when it is installed; otherwise keep its
-three sections: Summary (the smallest view that shows the change), Evidence (from the verification
-record), Merge Danger (one-way or two-way door, blast radius).
-
-With the PR open, obtain the authoritative external review of the exact candidate:
-
-Include the acceptance evidence record in that review request, with any remaining gaps, so the
-authoritative reviewer judges the same observed outcome as the local review.
+For Claude review, keep the thread, literal initial base and tracked spec fixed. Pass the evidence
+file and gaps with the request. Omit `--cap` to use the saved limit, or seven calls on a new thread.
+Pass a smaller bound when agreed.
 
 ```text
-$codex-cc-triage:claude-review --required --base <base-sha> --spec <repo-relative-spec> --thread <task-thread> --cap 5 Review the complete candidate for correctness, architecture, security/data, and testing/operability. End with the required verdict.
+$codex-cc-triage:claude-review --required --base <base-sha> --spec "<spec-path>" --thread <thread> Review the complete candidate and its acceptance evidence.
 ```
 
-`<base-sha>` is the target SHA the candidate was integrated with when the thread opened; it stays
-fixed for that thread. If the target advances, integrate it, re-verify affected evidence and
-re-review the new candidate in the same thread. `merge.sh` requires only the
-reviewed base to be a proper ancestor of the candidate, and the head pin does the rest.
+Read the installed companion's required-review contract before using optional flags. The 0.7.x
+contract requires an explicit `--cap` from 1 to 5. Pass the pinned cap on resume and the smaller
+of five or the authorized calls for a new thread. It accepts only `[A-Za-z0-9_./-]` in the spec
+path. Preserve an existing spec with spaces or Unicode and report the version needed to review it.
+This version has no `renew` or integration exception. Once its attempts are exhausted, preserve the
+thread and report that continuing required review needs an authorized upgrade and a confirmed
+remaining grant. Continue local fixes and verification meanwhile.
 
-Publish every completed external verdict immediately, before editing the candidate:
+Finish each round before editing, committing or pushing a fix. Record its result with the
+companion. Save the receipt in a private directory under a distinct name per claim. An approval
+receipt is the output of `<plugin-root>/scripts/check-review.sh "$THREAD" "$SHA" "$BASE" "$SPEC"`.
+For validated blocking findings (also at the cap), or a local review decision, write
+`codex-tuner-verdict: <APPROVE|REQUEST_CHANGES> <full judged SHA>` to that round's file.
+An incomplete round has no publishable verdict. Keep the same file on retry.
 
-```bash
-gh pr review <pr> --comment --body "codex-tuner-verdict: <APPROVE|REQUEST_CHANGES> <candidate-sha>"
-```
+Read the [delivery routes](references/delivery.md) before the first remote write. Publish the
+receipt immediately when allowed. When the forge is unavailable, keep it, continue safe fixes,
+and retry against the original SHA before the next push. Resolve confirmed findings, reverify
+and review the next clean candidate. Refuting or waiving every finding on the same SHA still
+requires a fresh decision. On an exhausted grant, continue safe work and report the missing
+approval once. Apply an existing authorization directly through the companion's
+`review-state.sh renew "$THREAD" --by "$OWNER" --rounds "$N" --grant "$DECISION_ID"`.
 
-On `REQUEST_CHANGES`, validate findings, fix only valid in-scope issues, rerun affected evidence,
-commit a new candidate, and continue the same review thread. If every finding is refuted with a
-concrete `file:line` or explicitly deferred, the SHA stays unchanged but a fresh required round must
-approve it. Never reset a capped thread to seek an easier verdict.
+Before publication and merge, synchronize the target. If it advanced, integrate it and refresh
+affected evidence. A merge of the target onto the previously approved first parent can use the
+companion's `begin --integration` within the remaining paid grant. Other edits take a normal
+review round. Follow the selected route through the last permitted action.
 
-**At the cap, stop paid review attempts and delivery — not the work.** Continue the safe remaining
-fixes, keep the candidate stable, and report the missing approval once, in one request, together with
-any other pending decision. Missing, stale, unavailable, diverged or capped review blocks merge; it
-does not end the run.
-
-**A coupled outcome across repositories is delivered as a set.** Each candidate keeps its own review
-thread and CI mode, but readiness is shared:
-
-- Run `merge.sh --check-only` for **every** participating candidate before the first merge.
-- Confirm each spec's `rollout` prerequisite with the command it names before the candidate that
-  depends on it merges, then merge in the order the primary spec declares.
-- If a later merge refuses, stop merging, report which candidates are delivered and which are not,
-  and continue safe work on the rest.
-- Separate green PRs do not show the shared result is ready; the primary spec's combined acceptance does.
-
-Observe CI in the mode the spec declares (modes are defined in `../spec/SKILL.md`). For `none:<reason>`,
-record the local substitute first with
-`gh pr comment <pr> --body "codex-tuner-local-ci: <candidate-sha> <what ran, and what it returned>"`.
-Pending, skipped, stale, cancelled, billing-blocked or red is not green in any mode, and `none` never
-outranks a check that ran. If observation contradicts the spec, correct its `ci:` mode before review
-rather than picking a mode at the merge boundary. Check every Definition of Done item by name.
-
-Use the spec's merge strategy, its `ci` mode verbatim, and the same required-review thread:
-
-```bash
-bash "<plugin-root>/scripts/merge.sh" --ci <mode> <pr> <squash|merge> <candidate-sha> <review-thread> <base-sha> <spec-path>
-```
-
-Resolve `<plugin-root>` as two directories above this skill directory. `merge.sh` independently
-re-reads the companion approval, public verdict, PR head, and CI under the declared mode, then uses
-GitHub's atomic head pin. Do not replace it with raw `gh pr merge` for a codex-tuner run.
-
-Without `--auto`, ask before the first push or PR creation **unless that authorization was already
-given** in this task. Then hand the verified candidate to the user for merge rather than merging it
-yourself. Under `--auto`, continue when the checked boundary passes. After confirmed `MERGED`, reconcile the tracker/spec,
-switch to the literal target, pull `--ff-only`, and remove only clean worktrees and proven-merged
-branches.
-
-## Hard stops
-
-- Scope or authority required beyond the contract, including deploy/publish/migration, force-push,
-  bypass flags, broad staging, or direct target commits.
-- Unresolved human-only acceptance under `--auto`.
-- Red or missing verification, review, CI under the declared mode, or DoD evidence — a hard stop for
-  **delivery**; safe in-scope work continues and the gap is reported once.
-- Dirty or moved candidate, unexplained files, stale approval, or moved PR head.
-
-Report the completed outcome first, then candidate/PR/CI/review evidence, deferred findings, and
-cleanup. Never claim CI, approval, or merge from an older SHA.
+A coupled outcome is delivered as a set. Verify combined acceptance from the primary spec,
+check each route before the first merge, and confirm each rollout prerequisite with its named
+command. On a partial delivery, name the landed and pending candidates. After an observed merge
+follow [task flow](../task-flow/SKILL.md) for the correct target, tracker and cleanup.

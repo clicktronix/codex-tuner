@@ -9,7 +9,7 @@ Load the repository instructions needed for a review or change. This skill does 
 rewrite, or enforce rules; setup owns installation.
 
 1. Resolve each target repository, including siblings reached during the task. Read its root
-   `AGENTS.override.md` or `AGENTS.md` and applicable nested instruction files. Reuse full text
+   nonempty `AGENTS.override.md` or, failing that, `AGENTS.md`, and applicable nested instructions. Reuse full text
    already loaded in this session; a filename, heading list, or summary is not the rule body.
 2. Follow the repository's rule index when present. Also inspect the inventory and frontmatter of
    `.claude/rules/**/*.md` so an outdated index cannot hide a newly added rule. Read every rule
@@ -21,6 +21,3 @@ rewrite, or enforce rules; setup owns installation.
    conflicting instructions.
 4. Revisit selection when the task crosses a subsystem or repository boundary. Briefly name the
    rule files read and any unresolved gap, then continue the user's task.
-
-Skip bodies Claude Code already loaded natively. Codex does not inject sibling instruction files
-when you open a source file, so read them explicitly.

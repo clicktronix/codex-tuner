@@ -1,8 +1,8 @@
 interface:
   display_name: "Run Task"
-  short_description: "Deliver a task through native Goal mode"
-  default_prompt: "Use $codex-tuner:run to implement this task through tests, proportionate review, required CI, merge, and cleanup."
+  short_description: "Implement, verify and deliver authorized tasks"
+  default_prompt: "Use $codex-tuner:run to implement this task through verification, proportionate review and the authorized delivery stage."
 policy:
   products:
     - "CODEX"
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true
