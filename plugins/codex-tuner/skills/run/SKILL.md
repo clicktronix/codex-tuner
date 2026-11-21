@@ -83,7 +83,7 @@ committed-candidate review is authorized, record that review locally without cre
 
 Use the spec's review owner. `review: claude` (the default for older specs) uses the authorized
 read-only companion. `review: local` uses the owner's exact-candidate judgement when the owner
-selected that mode. A missing installation or an exhausted grant leaves required approval pending.
+selected that mode. A missing installation or exhausted review rounds leave required approval pending.
 
 For Claude review, keep the thread, literal initial base and tracked spec fixed. Pass the evidence
 file and gaps with the request. Omit `--cap` to use the saved limit, or seven calls on a new thread.
@@ -112,13 +112,13 @@ Read the [delivery routes](references/delivery.md) before the first remote write
 receipt immediately when allowed. When the forge is unavailable, keep it, continue safe fixes,
 and retry against the original SHA before the next push. Resolve confirmed findings, reverify
 and review the next clean candidate. Refuting or waiving every finding on the same SHA still
-requires a fresh decision. On an exhausted grant, continue safe work and report the missing
+requires a fresh decision. When the review rounds run out, continue safe work and report the missing
 approval once. Apply an existing authorization directly through the companion's
 `review-state.sh renew "$THREAD" --by "$OWNER" --rounds "$N" --grant "$DECISION_ID"`.
 
 Before publication and merge, synchronize the target. If it advanced, integrate it and refresh
 affected evidence. A merge of the target onto the previously approved first parent can use the
-companion's `begin --integration` within the remaining paid grant. Other edits take a normal
+companion's `begin --integration` within the remaining review rounds. Other edits take a normal
 review round. Follow the selected route through the last permitted action.
 
 A coupled outcome is delivered as a set. Verify combined acceptance from the primary spec,
