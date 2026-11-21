@@ -154,8 +154,9 @@ if [ "$CI_MODE" = none ]; then
       | "\(.first)   — " + (.user.login // "unknown") ]
     | last // ""')"
   [ -n "$LOCAL_CI" ] \
-    || die "'ci: none' waives CI on $SHA, so what stood in for it has to be on the record:
-  $GH pr comment $PR --repo $REPO --body \"codex-tuner-local-ci: $SHA <the command that ran, and what it returned>\""
+    || die "'ci: none' waives CI on $SHA, so what stood in for it has to be on the record. Write a file whose
+  first line is 'codex-tuner-local-ci: $SHA <the command that ran, and what it returned>', then run:
+  $GH pr comment $PR --repo $REPO --body-file <that file>"
   printf 'codex-tuner merge: no CI reported on %s; merging under a recorded waiver: %s\n' "$SHA" "$CI_REASON" >&2
   printf 'codex-tuner merge: local verification claimed on the pull request: %s\n' "$LOCAL_CI" >&2
 else

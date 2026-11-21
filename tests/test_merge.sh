@@ -183,6 +183,10 @@ if TEST_NO_CHECKS=1 run_merge --ci none:manual 2>"$T/error"; then
   exit 1
 fi
 grep -q 'has to be on the record' "$T/error"
+# The hint is copied with a check's output pasted in: inside --body "..." the shell would expand
+# backticks and $(...) from that output, so the record goes through a file.
+grep -q -- '--body-file' "$T/error" || { echo "FAIL local-CI hint does not use --body-file" >&2; exit 1; }
+if grep -q -- '--body ' "$T/error"; then echo "FAIL local-CI hint passes the record inline" >&2; exit 1; fi
 if TEST_NO_CHECKS=1 TEST_LOCAL_CI=stale run_merge --ci none:manual 2>"$T/error"; then
   echo "FAIL --ci none accepted a local-CI record for another SHA" >&2
   exit 1
