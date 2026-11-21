@@ -51,8 +51,8 @@ Choose values from repository policy and the user's authorization. `delivery` re
 
 Set `ci` on its own line to one of these modes and put verification commands in the Verification section:
 
-- `required`: the target branch's required checks decide.
-- `any`: no check is required; every check reported on the candidate decides.
+- `required`: the target branch's required checks are the selected ones.
+- `any`: the target requires no check, so every check reported on the candidate is selected.
 - `none:<reason>`: no hosted check runs; an identified local substitute stands in, recorded with the candidate before merge, and the merge gate refuses it when any check is reported.
 
 Under `required` and `any` a skipped check counts neither way, at least one selected check must pass, and a pending, failed or cancelled check blocks.

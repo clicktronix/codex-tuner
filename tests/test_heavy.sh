@@ -20,7 +20,7 @@ absent() { case "$3" in *"$2"*) fail "$1 (unwanted /$2/ present)" ;; *) pass "$1
 # equals <name> <expected> <actual>
 equals() { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1 (want '$2', got '$3')"; fi; }
 
-# This file is shared with cc-tuner (plugins/cc-tuner/scripts/heavy.sh): both plugins lock the same
+# This file is shared with cc-tuner (plugins/cc-tuner/scripts/heavy.sh in the cc-tuner repository): both plugins lock the same
 # slot directory, so both copies must run one protocol. Change them together, byte for byte, and
 # update this pin and cc-tuner's in the same change.
 HEAVY_SHA256=b8ea3190329c0b9a5c617e43b6915a8b3aca9fd8165bab71571b7ed5d7b78156
