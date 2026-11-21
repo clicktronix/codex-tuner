@@ -36,7 +36,7 @@ python3 "<plugin-root>/scripts/finish-review.py" "$ROUND_FILE" --pr "$PR" --spec
 
 Omit `--pr` to retain a local receipt. Under `ci: none:<reason>`, publish the substitute's command
 and observed result from a file starting `codex-tuner-local-ci: <SHA> <command and result>`.
-List the DoD evidence and outstanding gaps. Run `gh pr ready` only when ready/open publication is
+List the acceptance evidence and outstanding gaps. Run `gh pr ready` only when ready/open publication is
 authorized. Draft-only runs leave the draft intact and identify any checks that await readiness.
 
 For merge handoff run the command below with `--check-only`. For an authorized merge use the same
@@ -69,8 +69,8 @@ Pass `--hostname "$FORGE"` to `glab api` and `--repo "https://$FORGE/$PROJECT"` 
    `<!-- codex-tuner-round: <claim or unique local round ID> -->` line. On retry read all notes first
    and reuse the same author's matching round. Preserve the judged SHA when the MR advances.
 3. Mark a draft ready only when authorized. Read all pages of MR notes and select the authenticated
-   author's latest verdict for this SHA, ordered by creation time and ID. Require APPROVE, the
-   corresponding verification evidence and the recorded DoD. Read the MR's current
+   author's latest verdict for this SHA, ordered by creation time and ID. Require APPROVE and the
+   corresponding verification evidence. Read the MR's current
    [approval state](https://docs.gitlab.com/api/merge_request_approvals/) and respect required people,
    unresolved threads and merge checks. A pending required approval remains a human handoff.
 4. Read `head_pipeline`. Require a successful target-project pipeline on the exact head. For a

@@ -23,6 +23,10 @@ require "$SPEC" 'host: github|gitlab|local|pending'
 require "$SPEC" 'delivery: local|draft|pr|merge'
 require "$SPEC" 'review: claude|local'
 require "$SPEC" 'ci: <mode>'
+# task-flow sends readers here for the CI modes; each name keeps its definition beside it.
+require "$SPEC" '- `required`: '
+require "$SPEC" '- `any`: '
+require "$SPEC" '- `none:<reason>`: '
 require "$RUN" '--local-only'
 require "$RUN" 'references/delivery.md'
 require "$RUN" '../deep-review/SKILL.md'
@@ -42,5 +46,7 @@ if grep -Fq -- '--cap 5' "$RUN"; then echo "FAIL delivery overrides the saved re
 
 reject_tree 'runctl\.sh|workflow-contract\.json|run-state\.schema|execute-task-runs|\.agent-state/codex-tuner'
 reject_tree 'Phase [0-9]|authoritative run state|Markdown journal'
+# The spec template has no Definition of Done; acceptance criteria and the verification record carry it.
+reject_tree 'DoD|Definition of Done'
 
 echo "PASS contract"

@@ -49,7 +49,15 @@ rollout: <prerequisite and command to confirm it, or none>
 
 Choose values from repository policy and the user's authorization. `delivery` records the furthest authorized action. `local` leaves a local handoff. `draft` allows draft publication. `pr` allows an open PR/MR. `merge` requires merge authority and a checked route. Local fast-forward uses `host: local` and `merge: ff`. For unresolved or unsupported destinations use `pending`. Record an explicit local review decision when required external review is waived or the agreed route uses only local review. An unavailable reviewer never changes the contract by itself.
 
-Set `ci` on its own line to `required`, `any`, or `none:<reason>` and put verification commands in the Verification section. Use `none:<reason>` only with an identified local substitute. A local-only implementation can proceed with unresolved publication, an outstanding human judgement, or a future rollout. Record the item and which step needs it. In coupled work add `second-repo:` for the dependent checkout and spec, and `shared-task:` on the companion.
+Set `ci` on its own line to one of these modes and put verification commands in the Verification section:
+
+- `required`: the target branch's required checks decide.
+- `any`: no check is required; every check reported on the candidate decides.
+- `none:<reason>`: no hosted check runs; an identified local substitute stands in, recorded with the candidate before merge, and the merge gate refuses it when any check is reported.
+
+Under `required` and `any` a skipped check counts neither way, at least one selected check must pass, and a pending, failed or cancelled check blocks.
+
+A local-only implementation can proceed with unresolved publication, an outstanding human judgement, or a future rollout. Record the item and which step needs it. In coupled work add `second-repo:` for the dependent checkout and spec, and `shared-task:` on the companion.
 
 Set `auto_ready: yes` when the route and checks are known and every human criterion has an observed result, an agreed machine check or an owner waiver. Otherwise use `no` and name the pending decision. Readiness describes the evidence available for unattended delivery. The `delivery` field and the owner's request set its limit.
 
