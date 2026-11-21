@@ -30,7 +30,8 @@ govern commits, remote writes, board changes, merge and deployment independently
 | `merge` | Recheck the route and merge the verified head when the user authorized merge. |
 
 An explicit PR request covers its task branch push and ordinary evidence comments. Use `--auto`
-only for requested unattended delivery. It can authorize merge within the agreed scope. A narrower
+only for requested unattended delivery. It can authorize merge within the agreed scope. It grants no
+deployment, publishing, migration, force-push or destructive data operation. A narrower
 request or repository rule wins. A planned stage describes the intended destination. Only the
 user's authorization permits widening it. For `auto_ready: no`, resolve the listed prerequisites
 within the current task and recheck readiness before the stage that depends on them.
