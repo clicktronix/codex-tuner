@@ -40,31 +40,27 @@ Before reusing a branch or checkout, inspect `git worktree list --porcelain`, it
 
 ## Heavy checks
 
-Use `scripts/heavy.sh` for full builds/suites, e2e and service starts; its slots are shared with
-cc-tuner. Check resource readiness immediately before the foreground workload inside the heavy
-slot, so waiting for the slot does not stale the observations. Inspect the host's available memory,
-CPU headroom and free space on the storage it will use through read-only system metrics. Compare
-those observations with the workload's requirements from repository guidance or earlier runs; use a
-conservative estimate when no prior measurement exists. Record the measurements and readiness
-decision in the existing task context; a free slot alone does not prove capacity. If capacity is
-insufficient, leave the slot without starting the workload, wait for active work to finish and
-recheck before retrying. Report unavailable measurements as uncertainty rather than a successful
-check. Preserve other tasks and their resources throughout; availability is not authorization to
-stop them.
-
-`<readiness-check>` prints those measurements (`vm_stat` or `free -m`, `uptime`, `df -k .`) and exits
-non-zero when they fall short, so the workload starts only after it passes inside the slot:
+A full build, the full test suite, an e2e suite and a container start run through the machine's
+slots. `scripts/heavy.sh` is the same file as cc-tuner's, so both plugins share one queue:
 
 ```bash
-bash <plugin-root>/scripts/heavy.sh --label "<repo>: build" -- \
-  sh -c '<readiness-check> && exec <foreground-runner>'
+bash <plugin-root>/scripts/heavy.sh --weight <w> --label "<repo>: <what>" -- <runner>
 ```
 
-For a heavy check using a scope, `check` goes around the runner the same way:
+An e2e suite takes `--weight 2`; a full suite, build or container start takes the default weight 1.
+Capacity follows the machine's RAM and waiters start in arrival order, so the call may wait. Start
+it as a background job, keep working, then wait on that job for its result. The runner's output and
+exit code pass through; heavy.sh's own refusals exit 64. The helper itself waits out memory
+pressure, within a bound. Carry into the report every output line that starts with
+`heavy.sh: started under memory pressure`, `heavy.sh: memory pressure not measured` or
+`heavy.sh: started without a slot`: a failure in that run may be the machine, not the code. Do not
+stop another task's work to free a slot.
+
+For a heavy check using a scope, `check` goes inside the slot:
 
 ```bash
-bash <plugin-root>/scripts/heavy.sh --label "<repo>: e2e" -- \
-  sh -c '<readiness-check> && exec python3 <plugin-root>/scripts/resources.py check <scope> -- <foreground-e2e-runner>'
+bash <plugin-root>/scripts/heavy.sh --weight 2 --label "<repo>: e2e" -- \
+  python3 <plugin-root>/scripts/resources.py check <scope> -- <e2e-runner>
 ```
 
 ## Disposable test containers

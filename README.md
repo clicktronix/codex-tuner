@@ -61,7 +61,8 @@ hooks through `/hooks`; enabling a plugin does not trust its hooks automatically
 ## Resource lifecycle
 
 [Task resources](plugins/codex-tuner/references/resources.md) covers task-owned previews, dedicated
-MCP servers and disposable containers. Heavy checks share cc-tuner's machine-wide slots.
+MCP servers and disposable containers. Heavy checks run through the same `heavy.sh` as cc-tuner and
+share its machine-wide queue.
 
 ## Development
 

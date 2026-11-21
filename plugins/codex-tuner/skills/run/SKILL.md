@@ -48,8 +48,9 @@ Read the whole diff, including untracked paths and generated outputs. Follow
 Use independent units with disjoint ownership when delegated work is authorized and useful.
 The parent integrates and verifies their combined result. For long checks, wait on the same job
 and inspect its result. Follow [task resources](../../references/resources.md) for previews and
-containers. Run heavy checks as
-`<plugin-root>/scripts/heavy.sh --label "<repo>: <check>" -- <command>`.
+containers. Run heavy checks through `<plugin-root>/scripts/heavy.sh` as its
+[heavy checks](../../references/resources.md#heavy-checks) section describes; an e2e suite takes
+`--weight 2`.
 
 ## 3. Verify the actual candidate
 

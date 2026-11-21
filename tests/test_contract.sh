@@ -33,7 +33,8 @@ require "$ROUTES" 'scripts/local-merge.py'
 require "$ROUTES" 'scripts/finish-review.py'
 require "$ROUTES" 'glab api "$MR_API/merge"'
 require "$RUN" 'scripts/heavy.sh'
-require "$PLUGIN/references/resources.md" "<readiness-check> && exec <foreground-runner>"
+require "$PLUGIN/references/resources.md" 'heavy.sh --weight 2'
+require "$PLUGIN/references/resources.md" 'heavy.sh: started without a slot'
 for file in scripts/check-review.sh scripts/finish-review.py scripts/local-merge.py scripts/destination.py; do
   test -x "$PLUGIN/$file"
 done
