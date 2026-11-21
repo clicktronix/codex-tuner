@@ -9,7 +9,7 @@ Codex skills for planning, implementing and verifying a change through its autho
 - `$codex-tuner:verify-feature` verifies the requested behaviour. `$codex-tuner:deep-review` audits a candidate and its affected consumers. Both also work as standalone requests.
 - `$codex-tuner:task-flow` supplies branch, PR, tracker, merge, and cleanup conventions.
 
-Codex can select these skills from the task description. For unattended work the user may also start a native goal. The delivery scope and repository permissions apply in either mode.
+Every skill, `run` included, allows implicit invocation: Codex may select these skills when the task calls for them; `--auto` and merge still need the user's request. For unattended work the user may also start a native goal. The delivery scope and repository permissions apply in either mode.
 
 Review depth follows the risk of the change. The [run skill](plugins/codex-tuner/skills/run/SKILL.md) describes review evidence and the checked delivery routes.
 
