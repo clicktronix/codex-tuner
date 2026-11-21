@@ -108,7 +108,11 @@ case "$1 $2" in
                    *)            printf 'no checks reported on the branch\n' >&2 ;; esac
       exit 1
     fi
-    printf '[{"name":"test","bucket":"%s"}]\n' "${TEST_CHECK_BUCKET:-pass}"
+    if [ -n "${TEST_CHECKS_JSON:-}" ]; then
+      printf '%s\n' "$TEST_CHECKS_JSON"
+    else
+      printf '[{"name":"test","bucket":"%s"}]\n' "${TEST_CHECK_BUCKET:-pass}"
+    fi
     exit "${TEST_CHECK_RC:-0}"
     ;;
   'pr merge')
@@ -269,12 +273,28 @@ if TEST_PR='--repo=other/repository' run_merge 2>"$T/error"; then
 fi
 grep -q 'pull request must be a positive number' "$T/error"
 
-for bucket in fail pending skipping cancel; do
+for bucket in fail pending cancel; do
   if TEST_CHECK_BUCKET="$bucket" run_merge 2>"$T/error"; then
     echo "FAIL $bucket required CI passed" >&2
     exit 1
   fi
   grep -q 'required checks are not passing' "$T/error"
+done
+
+# A skipped check (a job whose `if:` was false) counts neither way, as on GitHub; at least one
+# selected check must pass, and pending, failed or cancelled ones still block.
+for mode in required any; do
+  output="$(TEST_CHECKS_JSON='[{"name":"test","bucket":"pass"},{"name":"deploy-docs","bucket":"skipping"}]' run_merge --ci "$mode")" \
+    || { echo "FAIL a pass plus a skipped $mode check did not merge" >&2; exit 1; }
+  printf '%s' "$output" | grep -q "CI (--ci $mode)"
+  if TEST_CHECKS_JSON='[{"name":"test","bucket":"skipping"},{"name":"e2e","bucket":"skipping"}]' run_merge --ci "$mode" 2>"$T/error"; then
+    echo "FAIL all skipped $mode checks passed" >&2; exit 1
+  fi
+  grep -q 'were skipped, so no CI ran' "$T/error"
+  if TEST_CHECKS_JSON='[{"name":"test","bucket":"pass"},{"name":"e2e","bucket":"pending"}]' TEST_CHECK_RC=8 run_merge --ci "$mode" 2>"$T/error"; then
+    echo "FAIL a pass plus a pending $mode check passed" >&2; exit 1
+  fi
+  grep -q '1 of 2 .* checks are not passing' "$T/error"
 done
 
 if TEST_CHECK_BUCKET=pending TEST_CHECK_RC=8 run_merge 2>"$T/error"; then

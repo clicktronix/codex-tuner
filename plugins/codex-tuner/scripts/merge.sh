@@ -160,8 +160,12 @@ if [ "$CI_MODE" = none ]; then
   printf 'codex-tuner merge: local verification claimed on the pull request: %s\n' "$LOCAL_CI" >&2
 else
   [ "${TOTAL:-0}" -gt 0 ] 2>/dev/null || die "no $CI_LABEL CI checks ran on $SHA — absent CI is unproven CI. Make CI run on this commit, or correct the spec's 'ci:' mode to how this repository actually verifies a candidate, and re-run with the mode the spec then declares."
-  BAD="$(printf '%s' "$CHECKS" | jq -r '[.[] | select(.bucket != "pass")] | length')"
+  # A skipped check (a job whose `if:` was false) counts neither way, as on GitHub; at least one
+  # selected check must have passed.
+  BAD="$(printf '%s' "$CHECKS" | jq -r '[.[] | select(.bucket != "pass" and .bucket != "skipping")] | length')"
   [ "${BAD:-1}" -eq 0 ] 2>/dev/null || die "$BAD of $TOTAL $CI_LABEL checks are not passing"
+  PASSED="$(printf '%s' "$CHECKS" | jq -r '[.[] | select(.bucket == "pass")] | length')"
+  [ "${PASSED:-0}" -gt 0 ] 2>/dev/null || die "all $TOTAL $CI_LABEL CI checks on $SHA were skipped, so no CI ran on it. Run an applicable validation workflow on this candidate, or hand it off with CI unproved and merge pending."
 fi
 
 CURRENT_PRJSON="$(pr view "$PR" --json state,isDraft,isCrossRepository,baseRefOid,headRefOid,baseRefName,headRefName 2>/dev/null)" \
