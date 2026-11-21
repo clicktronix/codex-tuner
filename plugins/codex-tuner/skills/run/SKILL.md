@@ -86,8 +86,8 @@ read-only companion. `review: local` uses the owner's exact-candidate judgement 
 selected that mode. A missing installation or exhausted review rounds leave required approval pending.
 
 For Claude review, keep the thread, literal initial base and tracked spec fixed. Pass the evidence
-file and gaps with the request. Omit `--cap` to use the saved limit, or seven calls on a new thread.
-Pass a smaller bound when agreed.
+file and gaps with the request. Omit `--cap` to use the saved round limit, or the companion's
+default on a new thread. Pass a smaller limit when agreed.
 
 ```text
 $codex-cc-triage:claude-review --required --base <base-sha> --spec "<spec-path>" --thread <thread> Review the complete candidate and its acceptance evidence.
@@ -95,11 +95,11 @@ $codex-cc-triage:claude-review --required --base <base-sha> --spec "<spec-path>"
 
 Read the installed companion's required-review contract before using optional flags. The 0.7.x
 contract requires an explicit `--cap` from 1 to 5. Pass the pinned cap on resume and the smaller
-of five or the authorized calls for a new thread. It accepts only `[A-Za-z0-9_./-]` in the spec
+of five or the agreed limit for a new thread. It accepts only `[A-Za-z0-9_./-]` in the spec
 path. Preserve an existing spec with spaces or Unicode and report the version needed to review it.
-This version has no `renew` or integration exception. Once its attempts are exhausted, preserve the
-thread and report that continuing required review needs an authorized upgrade and a confirmed
-remaining grant. Continue local fixes and verification meanwhile.
+This version has no `renew`. Once its rounds are exhausted, preserve the thread and report that
+continuing required review needs an upgraded companion. Continue local fixes and verification
+meanwhile.
 
 Finish each round before editing, committing or pushing a fix. Record its result with the
 companion. Save the receipt in a private directory under a distinct name per claim. An approval
@@ -113,13 +113,12 @@ receipt immediately when allowed. When the forge is unavailable, keep it, contin
 and retry against the original SHA before the next push. Resolve confirmed findings, reverify
 and review the next clean candidate. Refuting or waiving every finding on the same SHA still
 requires a fresh decision. When the review rounds run out, continue safe work and report the missing
-approval once. Apply an existing authorization directly through the companion's
-`review-state.sh renew "$THREAD" --by "$OWNER" --rounds "$N" --grant "$DECISION_ID"`.
+approval once. After the owner agrees to more rounds, renew the same thread through the companion's
+`review-state.sh renew "$THREAD" --by "$OWNER"`.
 
 Before publication and merge, synchronize the target. If it advanced, integrate it and refresh
-affected evidence. A merge of the target onto the previously approved first parent can use the
-companion's `begin --integration` within the remaining review rounds. Other edits take a normal
-review round. Follow the selected route through the last permitted action.
+affected evidence. The integration merge takes a normal review round. Follow the selected route
+through the last permitted action.
 
 A coupled outcome is delivered as a set. Verify combined acceptance from the primary spec,
 check each route before the first merge, and confirm each rollout prerequisite with its named
