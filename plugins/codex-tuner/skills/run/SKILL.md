@@ -93,14 +93,6 @@ default on a new thread. Pass a smaller limit when agreed.
 $codex-cc-triage:claude-review --required --base <base-sha> --spec "<spec-path>" --thread <thread> Review the complete candidate and its acceptance evidence.
 ```
 
-Read the installed companion's required-review contract before using optional flags. The 0.7.x
-contract requires an explicit `--cap` from 1 to 5. Pass the pinned cap on resume and the smaller
-of five or the agreed limit for a new thread. It accepts only `[A-Za-z0-9_./-]` in the spec
-path. Preserve an existing spec with spaces or Unicode and report the version needed to review it.
-This version has no `renew`. Once its rounds are exhausted, preserve the thread and report that
-continuing required review needs an upgraded companion. Continue local fixes and verification
-meanwhile.
-
 Finish each round before editing, committing or pushing a fix. Record its result with the
 companion. Save the receipt in a private directory under a distinct name per claim. An approval
 receipt is the output of `<plugin-root>/scripts/check-review.sh "$THREAD" "$SHA" "$BASE" "$SPEC"`.

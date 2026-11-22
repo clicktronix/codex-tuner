@@ -34,7 +34,7 @@ it is guidance, not an enforcement hook.
 
 ## Install
 
-For workflows that use Claude review, install the companion reviewer:
+For workflows that use Claude review, install the companion reviewer, version 0.8.0 or newer:
 
 ```bash
 codex plugin marketplace add clicktronix/codex-cc-triage --ref main
