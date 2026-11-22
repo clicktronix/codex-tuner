@@ -1,8 +1,8 @@
 interface:
   display_name: "Specify Task"
-  short_description: "Commit a concise executable task spec"
+  short_description: "Prepare a task spec or groom an issue"
   default_prompt: "Use $codex-tuner:spec to turn this task into one approved specification with scope, acceptance, verification, and delivery decisions."
 policy:
   products:
     - "CODEX"
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true

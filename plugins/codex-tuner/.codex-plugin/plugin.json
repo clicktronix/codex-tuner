@@ -1,7 +1,7 @@
 {
   "name": "codex-tuner",
   "version": "0.8.2",
-  "description": "Codex-native specification and Goal-mode delivery with proportionate review and exact-candidate merge gates.",
+  "description": "Plan tasks, verify behaviour, review candidates and deliver within the authorized local, draft, pull request or merge scope.",
   "author": {
     "name": "Clicktronix",
     "url": "https://github.com/clicktronix"
@@ -22,7 +22,7 @@
   "interface": {
     "displayName": "Codex Tuner",
     "shortDescription": "Verified Codex delivery",
-    "longDescription": "Use spec to commit task intent, run to deliver through Codex Goal mode with proportionate review and current-SHA gates, and task-flow for branch, PR, tracker, merge, and cleanup conventions. Use setup to wire repository rule loading and agent-rules to read the applicable project contracts.",
+    "longDescription": "Use spec and run to carry a task through verification and its authorized delivery stage. Independently verify a feature, audit a candidate, load repository rules or configure the workflow.",
     "developerName": "Clicktronix",
     "category": "Productivity",
     "capabilities": [
@@ -37,7 +37,7 @@
     "logo": "./assets/logo.svg",
     "defaultPrompt": [
       "Turn this task into an executable specification.",
-      "Run this task through native Goal-mode delivery and exact-candidate review."
+      "Implement this task and verify the candidate within the agreed delivery scope."
     ]
   }
 }

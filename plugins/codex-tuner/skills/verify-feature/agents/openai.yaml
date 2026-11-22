@@ -1,0 +1,8 @@
+interface:
+  display_name: "Verify Feature"
+  short_description: "Verify outcomes against observed evidence"
+  default_prompt: "Use $codex-tuner:verify-feature to check the agreed behaviour and report the evidence for each criterion."
+policy:
+  products:
+    - "CODEX"
+  allow_implicit_invocation: true

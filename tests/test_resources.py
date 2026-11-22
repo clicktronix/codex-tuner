@@ -439,7 +439,8 @@ class ResourcesTest(unittest.TestCase):
         other = self.root / "other-plugin-heavy.sh"
         shutil.copy2(heavy, other)
         log = self.root / "order"
-        env = dict(self.env, CC_TUNER_HEAVY_DIR=str(self.root / "slots"), CC_TUNER_HEAVY_POLL="0.05", CC_TUNER_HEAVY_SLOTS="1")
+        env = dict(self.env, CC_TUNER_HEAVY_DIR=str(self.root / "slots"), CC_TUNER_HEAVY_POLL="0.05", CC_TUNER_HEAVY_SLOTS="1",
+                   CC_TUNER_HEAVY_PRESSURE="normal")
         env.pop("CC_TUNER_HEAVY_HELD", None)
         first = subprocess.Popen(["bash", str(heavy), "--", "sh", "-c",
             'echo first-start >> "$1"; sleep .6; echo first-end >> "$1"', "sh", str(log)], env=env)

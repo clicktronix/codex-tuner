@@ -415,8 +415,10 @@ def validate(root: Path) -> list[str]:
         errors.append("marketplace category mismatch")
 
     expected_skills = {
-        "spec": False,
-        "run": False,
+        "spec": True,
+        "run": True,
+        "deep-review": True,
+        "verify-feature": True,
         "task-flow": True,
         "agent-rules": True,
         "setup": True,
