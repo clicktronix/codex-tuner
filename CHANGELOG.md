@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.0](https://github.com/clicktronix/codex-tuner/compare/v0.8.2...v0.9.0) (2026-11-22)
+
+
+### Features
+
+* align agent workflows and enforce delivery boundaries ([#29](https://github.com/clicktronix/codex-tuner/issues/29)) ([e646a2b](https://github.com/clicktronix/codex-tuner/commit/e646a2bd158c8c863d2a9f048a92c0fbcab3a576))
+
+
+### Bug Fixes
+
+* drop the compatibility paragraph for companion 0.7.x ([#31](https://github.com/clicktronix/codex-tuner/issues/31)) ([5e9fbbf](https://github.com/clicktronix/codex-tuner/commit/5e9fbbf9360fcdeba1fd2c552d74b57938774d45))
+
 ## [0.8.2](https://github.com/clicktronix/codex-tuner/compare/v0.8.1...v0.8.2) (2026-11-08)
 
 
