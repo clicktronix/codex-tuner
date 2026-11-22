@@ -1,6 +1,6 @@
 {
   "name": "codex-tuner",
-  "version": "0.8.2",
+  "version": "0.9.0",
   "description": "Plan tasks, verify behaviour, review candidates and deliver within the authorized local, draft, pull request or merge scope.",
   "author": {
     "name": "Clicktronix",
